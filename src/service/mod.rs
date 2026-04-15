@@ -1,0 +1,35 @@
+use crate::prelude::*;
+
+mod data;
+
+#[cfg(feature = "dev")]
+mod dev;
+mod input;
+mod player;
+mod third_party;
+mod ui;
+mod util;
+mod worldgen;
+
+pub mod prelude {
+    pub use super::data::*;
+    #[cfg(feature = "dev")]
+    pub use super::dev::prelude::*;
+    pub use super::input::prelude::*;
+    pub use super::player::prelude::*;
+    pub use super::third_party::prelude::*;
+    pub use super::util::*;
+    pub use super::worldgen::prelude::*;
+}
+
+pub fn plugin(app: &mut App) {
+    app.add_plugins((
+        third_party::plugin,
+        input::plugin,
+        ui::plugin,
+        worldgen::plugin,
+        player::plugin,
+    ));
+    #[cfg(feature = "dev")]
+    app.add_plugins(dev::plugin);
+}

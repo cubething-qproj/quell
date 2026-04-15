@@ -1,0 +1,45 @@
+pub(crate) mod data;
+
+use crate::prelude::*;
+use avian3d::prelude::*;
+use bevy::prelude::*;
+use data::*;
+
+pub mod prelude {
+    pub use super::data::*;
+}
+
+#[derive(Component, PartialEq, Eq, Debug, Default, Reflect)]
+#[reflect(Component)]
+pub struct WorldgenRoot;
+pub fn spawn_worldgen_root(
+    _: On<SpawnWorldgenRoot>,
+    mut commands: Commands,
+    assets: Res<WorldgenHandles>,
+    _meshes: Res<Assets<Mesh>>,
+) {
+    commands.spawn((
+        WorldgenRoot,
+        GlobalTransform::IDENTITY,
+        Visibility::Hidden,
+        Name::new("WorldgenRoot"),
+        ScreenScoped,
+        children![(
+            Name::new("World Mesh"),
+            // Collider::convex_hull_from_mesh(meshes.get(&assets.mesh).unwrap()).unwrap(),
+            Collider::half_space(Vec3::Y),
+            RigidBody::Static,
+            Mesh3d(assets.mesh.clone()),
+            Visibility::Visible,
+            MeshMaterial3d(assets.material.clone()),
+            Transform::from_xyz(0., 0., 0.)
+        )],
+    ));
+}
+
+pub fn plugin(app: &mut App) {
+    app.register_type::<WorldgenRoot>()
+        .init_resource::<WorldgenHandles>()
+        .register_type::<WorldgenHandles>()
+        .add_observer(spawn_worldgen_root);
+}
