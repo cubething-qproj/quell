@@ -36,8 +36,8 @@ variadics_please = "1.1.0"
 clap = {version = "4.5.54", features = ["derive"] }
 
 # workspace
-q_screens = {path = "../../q_screens/active", version= "^0.1.0" }
-q_term = {path = "../../q_term/active", version="^0.1.0"}
+q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^0.1.0" }
+q_term = { git = "https://github.com/cubething-qproj/q_term", version = "^0.1.0" }
 bevy-inspector-egui = "0.36.0"
 
 [build-dependencies]
