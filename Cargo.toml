@@ -15,14 +15,13 @@ clippy.type_complexity = "allow"
 clippy.nonstandard_macro_braces = "warn"
 
 [dependencies]
-bevy = "0.18"
-bevy_enhanced_input = "0.22"
-bevy_asset_loader = "0.25"
-bevy_mod_debugdump = { optional = true, version = "0.15" }
-avian3d = "0.5"
-bevy-tnua = "0.29"
-bevy-tnua-avian3d = "0.10"
-bevy_rich_text3d = "0.6"
+bevy = "0.19"
+bevy_enhanced_input = "0.26"
+bevy_asset_loader = "0.27"
+bevy_mod_debugdump = { optional = true, version = "0.16" }
+avian3d = "0.7"
+bevy-tnua = "0.32"
+bevy-tnua-avian3d = "0.12"
 
 # not bevy
 tiny_bail = "0.7"
@@ -38,7 +37,7 @@ clap = {version = "4.5.54", features = ["derive"] }
 # workspace
 q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^0.1.0" }
 q_term = { git = "https://github.com/cubething-qproj/q_term", version = "^0.1.0" }
-bevy-inspector-egui = "0.36.0"
+bevy-inspector-egui = "0.37.0"
 
 [build-dependencies]
 built = {version = "0.8.0", features=["chrono"]}
