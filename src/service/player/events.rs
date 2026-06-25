@@ -12,7 +12,7 @@ fn spawn_player_root(
         .spawn((
             PlayerController::default(),
             ScreenScoped,
-            SceneRoot(player_assets.model.clone()),
+            WorldAssetRoot(player_assets.model.clone()),
             (
                 RigidBody::Dynamic,
                 Collider::capsule(PLAYER_CAPSULE_RADIUS, PLAYER_CAPSULE_HEIGHT),

@@ -30,7 +30,7 @@ pub struct PAMove;
 #[derive(AssetCollection, Resource, Default, Debug)]
 pub struct PlayerAssets {
     #[asset(path = "models/basil.glb#Scene0")]
-    pub model: Handle<Scene>,
+    pub model: Handle<WorldAsset>,
 }
 
 #[derive(TnuaScheme)]

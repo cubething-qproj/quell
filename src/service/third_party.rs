@@ -20,9 +20,5 @@ pub fn plugin(app: &mut App) {
             bevy_tnua_avian3d::TnuaAvian3dPlugin::new(FixedUpdate),
         ));
     }
-    app.add_plugins((
-        EnhancedInputPlugin,
-        #[cfg(not(test))]
-        bevy_rich_text3d::Text3dPlugin::default(),
-    ));
+    app.add_plugins((EnhancedInputPlugin,));
 }
