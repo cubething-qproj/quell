@@ -5,7 +5,8 @@ use crate::prelude::*;
 /// default value.
 #[derive(Resource, Clone, Debug)]
 pub struct AppSettings {
-    pub initial_screen: String,
+    /// Registered screen name to start on. `None` starts on [`SplashScreen`].
+    pub initial_screen: Option<String>,
     pub use_physics: bool,
 }
 #[allow(clippy::derivable_impls)]
@@ -38,8 +39,14 @@ impl Plugin for AppPlugin {
         app.world_mut().insert_resource(self.settings.clone());
         app.add_plugins((ScreenPlugin, crate::service::plugin, crate::screen::plugin))
             .insert_resource(self.settings.clone());
-        app.insert_resource(InitialScreen::from_name(
-            self.settings.initial_screen.clone(),
-        ));
+        app.insert_resource(self.settings.initial_screen());
+    }
+}
+
+impl AppSettings {
+    fn initial_screen(&self) -> InitialScreen {
+        self.initial_screen
+            .clone()
+            .map_or_else(InitialScreen::new::<SplashScreen>, InitialScreen::from_name)
     }
 }

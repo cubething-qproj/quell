@@ -1,7 +1,7 @@
 use std::process::exit;
 
 use clap::Parser;
-use quell::{prelude::*, AppSettings};
+use quell::{AppSettings, prelude::*};
 
 mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
@@ -26,11 +26,8 @@ pub fn parse_args() -> AppSettings {
         exit(0);
     }
 
-    // manual default x_x
-    let initial_screen = args.screen.unwrap_or("SplashScreen".into());
-
     AppSettings {
-        initial_screen,
+        initial_screen: args.screen,
         ..Default::default()
     }
 }

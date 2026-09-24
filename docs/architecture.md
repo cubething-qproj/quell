@@ -249,22 +249,29 @@ pub fn systems() -> ServiceSystems {
 
 ### `state.rs`
 
-Handles states, like asset loading. When possible, **services should not have
-state.**
+Handles states, like dialogue or menu flow. When possible, **services should
+not have state.**
+
+Do not build loading states here. Screen loading is already a state machine
+owned by q_screens: gate `finish_loading()` on asset readiness from the
+screen's `Loading` schedule. vn-jun-26 is the canonical example
+(`src/screens/yarn_screen.rs`):
 
 ```rust
-// state.rs
-use crate::prelude::*;
-
-pub fn plugin(app: &mut App) {
-    app.init_state::<WorldScreenStates>();
-    app.add_loading_state(
-        LoadingState::new(WorldScreenStates::Loading)
-            .continue_to_state(WorldScreenStates::Ready)
-            .load_collection::<PlayerAssets>(),
-    );
+// screen.rs
+impl Screen for YarnScreen {
+    fn builder(mut builder: ScreenScopeBuilder<Self>) -> ScreenScopeBuilder<Self> {
+        builder.add_systems(
+            ScreenSchedule::Loading,
+            (|mut data: ScreenInfoMut<Self>| data.finish_loading()).run_if(assets_ready),
+        );
+        builder
+    }
 }
 ```
+
+For gameplay state machines, use `init_state` with `in_state` conditions, like
+vn-jun-26's `DialogueState`.
 
 You may be tempted to set up system scopes within a service. Do not do this!
 Only call `app.config_sets` within `state.rs` - i.e., within a screen module.
