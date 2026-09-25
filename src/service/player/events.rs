@@ -8,6 +8,7 @@ fn spawn_player_root(
     _: On<SpawnPlayerRoot>,
     mut commands: Commands,
     player_assets: Res<PlayerAssets>,
+    settings: Res<PlayerSettings>,
 ) {
     let player_entt = commands
         .spawn((
@@ -16,14 +17,14 @@ fn spawn_player_root(
             WorldAssetRoot(player_assets.model.clone()),
             (
                 RigidBody::Dynamic,
-                Collider::capsule(PLAYER_CAPSULE_RADIUS, PLAYER_CAPSULE_HEIGHT),
+                Collider::capsule(settings.capsule_radius, settings.capsule_height),
                 CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
                 LockedAxes::ROTATION_LOCKED.unlock_rotation_y(),
                 Friction::ZERO,
             ),
             (
                 PlayerTnuaController::default(),
-                TnuaAvian3dSensorShape(Collider::cylinder(PLAYER_CAPSULE_RADIUS + 0.1, 0.)),
+                TnuaAvian3dSensorShape(Collider::cylinder(settings.capsule_radius + 0.1, 0.)),
                 ICtxDefault,
                 ContextActivity::<ICtxDefault>::ACTIVE,
                 actions!(
@@ -31,7 +32,6 @@ fn spawn_player_root(
                         Action::<PAMove>::new(),
                         DeadZone::default(),
                         SmoothNudge::default(),
-                        Scale::splat(PLAYER_DEFAULT_SPEED),
                         Negate::y(),
                         SwizzleAxis::XZY,
                         Bindings::spawn((Cardinal::wasd_keys(), Axial::left_stick())),
@@ -56,11 +56,13 @@ fn spawn_player_root(
 
 fn on_move(
     trigger: On<Fire<PAMove>>,
+    settings: Res<PlayerSettings>,
     mut controller: Single<&mut PlayerController>,
     camera: Single<&Camera, With<SpringArm>>,
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
-    controller.last_move = (camera.is_active && window.focused).then_some(trigger.value);
+    controller.last_move =
+        (camera.is_active && window.focused).then_some(trigger.value * settings.default_speed);
 }
 
 pub fn plugin(app: &mut App) {
@@ -188,6 +190,24 @@ mod tests {
     }
 
     #[test]
+    fn movement_speed_edits_apply_to_an_existing_player() {
+        let mut f = Fixture::new();
+        f.warm_move();
+        f.app
+            .world_mut()
+            .resource_mut::<PlayerSettings>()
+            .default_speed = 0.;
+        f.tick(2);
+        assert_eq!(f.desired_motion(), Vec3::ZERO);
+        f.app
+            .world_mut()
+            .resource_mut::<PlayerSettings>()
+            .default_speed = 2.;
+        f.tick(2);
+        assert!(f.desired_motion().length() > 0.);
+    }
+
+    #[test]
     fn spawned_player_keeps_world_contacts_with_player_membership() {
         let mut app = App::new();
         let dt = Duration::from_millis(16);
@@ -195,6 +215,11 @@ mod tests {
             .init_resource::<Assets<Mesh>>()
             .add_message::<AssetEvent<Mesh>>()
             .init_resource::<PlayerAssets>()
+            .insert_resource(PlayerSettings {
+                capsule_height: 1.5,
+                capsule_radius: 0.75,
+                ..default()
+            })
             .add_plugins((PhysicsPlugins::default(), super::plugin))
             .insert_resource(Time::<Fixed>::from_duration(dt))
             .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(dt));
@@ -207,7 +232,11 @@ mod tests {
             .query_filtered::<Entity, With<PlayerController>>()
             .single(world)
             .unwrap();
-        let start_height = PLAYER_CAPSULE_HEIGHT + 2. * PLAYER_CAPSULE_RADIUS + 2.;
+        let settings = world.resource::<PlayerSettings>();
+        let resting_height = settings.capsule_height / 2. + settings.capsule_radius;
+        let sensor = &world.get::<TnuaAvian3dSensorShape>(player).unwrap().0;
+        assert!(sensor.shape().as_cylinder().unwrap().radius > settings.capsule_radius);
+        let start_height = resting_height + 4.;
         world
             .entity_mut(player)
             .insert(Transform::from_xyz(0., start_height, 0.));
@@ -228,10 +257,7 @@ mod tests {
             }
         }
         let height = world.get::<Position>(player).unwrap().y;
-        assert!(
-            height > 0. && height < start_height - 1.,
-            "height: {height}"
-        );
+        assert!((height - resting_height).abs() < 0.1, "height: {height}");
         assert!(world.get::<LinearVelocity>(player).unwrap().y.abs() < 0.1);
     }
 

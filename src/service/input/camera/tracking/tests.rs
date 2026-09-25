@@ -283,6 +283,21 @@ fn orbit_uses_transform_rotation_and_orbit_and_zoom_saturate() {
 }
 
 #[test]
+fn zoom_speed_edits_apply_to_an_existing_camera() {
+    let mut f = Fixture::new();
+    f.capture();
+    for speed in [0., -1., 2.] {
+        f.app
+            .world_mut()
+            .resource_mut::<PlayerCameraSettings>()
+            .zoom_speed = speed;
+        let before = f.fov();
+        f.fire::<PAZoomCam>(0.01);
+        assert!((f.fov() - before - 0.01 * speed).abs() < 1e-5);
+    }
+}
+
+#[test]
 fn mouse_orbit_is_time_independent_but_stick_orbit_scales_with_delta_and_never_zooms() {
     let sample = |millis, mouse, stick: Vec2| {
         let mut f = Fixture::new();
@@ -324,5 +339,6 @@ fn mouse_orbit_is_time_independent_but_stick_orbit_scales_with_delta_and_never_z
         .resource_mut::<AccumulatedMouseScroll>()
         .delta = Vec2::Y * 4.;
     f.input(Duration::from_millis(16));
-    assert!(f.fov() > fov);
+    let zoom_speed = f.app.world().resource::<PlayerCameraSettings>().zoom_speed;
+    assert!((f.fov() - fov) * zoom_speed > 0.);
 }

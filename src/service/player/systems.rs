@@ -30,7 +30,7 @@ fn update_controller(
     // NOTE: THIS MAY BREAK THINGS
     // tnua.basis(TnuaBuiltinWalk {
     //     desired_velocity: yaw_quat * last_move,
-    //     float_height: PLAYER_CAPSULE_HEIGHT / 2. + PLAYER_CAPSULE_RADIUS,
+    //     float_height: settings.capsule_height / 2. + settings.capsule_radius,
     //     desired_forward,
     //     turning_angvel: 10000.,
     //     ..Default::default()

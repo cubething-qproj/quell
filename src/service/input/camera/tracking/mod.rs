@@ -16,6 +16,8 @@ pub mod prelude {
 }
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins((events::plugin, systems::plugin))
+    app.init_resource::<PlayerCameraSettings>()
+        .register_type::<PlayerCameraSettings>()
+        .add_plugins((events::plugin, systems::plugin))
         .add_input_context::<SpringArm>();
 }

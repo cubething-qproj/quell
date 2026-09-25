@@ -28,9 +28,12 @@ pub fn tracking_cam_bundle(target: Entity) -> impl Bundle {
                 ),
                 (
                     Action::<PAZoomCam>::new(),
-                    DeadZone::default(),
+                    DeadZone {
+                        kind: DeadZoneKind::Radial,
+                        lower_threshold: 0.,
+                        upper_threshold: 1.,
+                    },
                     SmoothNudge::default(),
-                    Scale::splat(PLAYER_CAM_ZOOM_SPD),
                     Bindings::spawn(Spawn((
                         Binding::mouse_wheel(),
                         Scale::splat(0.1),

@@ -35,6 +35,7 @@ fn on_rotate(
 
 fn on_zoom(
     trigger: On<Fire<PAZoomCam>>,
+    settings: Res<PlayerCameraSettings>,
     mut cameras: Query<(&Camera, &ContextActivity<SpringArm>, &mut Projection), With<SpringArm>>,
     window: Query<(&Window, &CursorOptions), With<PrimaryWindow>>,
 ) {
@@ -45,7 +46,8 @@ fn on_zoom(
         return;
     }
     if let Projection::Perspective(projection) = &mut *projection {
-        projection.fov = (projection.fov + trigger.value).clamp(FRAC_PI_8, FRAC_PI_2);
+        projection.fov =
+            (projection.fov + trigger.value * settings.zoom_speed).clamp(FRAC_PI_8, FRAC_PI_2);
     }
 }
 

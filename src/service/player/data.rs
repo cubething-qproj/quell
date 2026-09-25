@@ -1,10 +1,41 @@
 use crate::prelude::*;
 
-pub const PLAYER_CAPSULE_HEIGHT: f32 = 3.;
-pub const PLAYER_CAPSULE_RADIUS: f32 = 0.5;
-pub const PLAYER_DEFAULT_SPEED: f32 = 10.;
-pub const PLAYER_CAM_ROTATION_SPD: f32 = 10.;
-pub const PLAYER_CAM_ZOOM_SPD: f32 = 10.;
+#[derive(Resource, Reflect, Debug)]
+#[reflect(Resource)]
+pub struct PlayerSettings {
+    /// Applied when spawning the player, not to an existing collider.
+    pub capsule_height: f32,
+    /// Applied when spawning the player and its movement sensor.
+    pub capsule_radius: f32,
+    pub default_speed: f32,
+}
+
+impl Default for PlayerSettings {
+    fn default() -> Self {
+        Self {
+            capsule_height: 3.,
+            capsule_radius: 0.5,
+            default_speed: 10.,
+        }
+    }
+}
+
+#[derive(Resource, Reflect, Debug)]
+#[reflect(Resource)]
+pub struct PlayerCameraSettings {
+    /// Currently unused; orbit uses the mouse/stick binding sensitivities.
+    pub rotation_speed: f32,
+    pub zoom_speed: f32,
+}
+
+impl Default for PlayerCameraSettings {
+    fn default() -> Self {
+        Self {
+            rotation_speed: 10.,
+            zoom_speed: -5.,
+        }
+    }
+}
 
 #[derive(SystemSet, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerSystems;
