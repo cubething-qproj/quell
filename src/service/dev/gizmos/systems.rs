@@ -4,7 +4,7 @@ fn render_camera_gizmos(
     mut cam_gizmos: Gizmos<CameraGizmoConfigGroup>,
     config_store: Res<GizmoConfigStore>,
     fly_cam: Query<&Transform, With<FreeCamera>>,
-    player_cam: Query<(&Transform, &TrackingCam), With<TrackingCam>>,
+    player_cam: Query<(&Transform, &SpringArm)>,
     player_tf: Query<&Transform, With<PlayerController>>,
 ) {
     let config = config_store.config::<CameraGizmoConfigGroup>().1;
@@ -23,7 +23,7 @@ fn render_camera_gizmos(
             // );
             cam_gizmos.sphere(
                 tf.to_isometry(),
-                controller.outer_radius,
+                controller.length,
                 config.player_cam_sphere_color,
             );
         }

@@ -8,10 +8,7 @@ impl Screen for WorldScreen {
     fn builder(mut builder: ScreenScopeBuilder<Self>) -> ScreenScopeBuilder<Self> {
         builder.add_systems(ScreenSchedule::Loading, load_world);
         builder.add_systems(ScreenSchedule::OnReady, init);
-        builder.add_systems(
-            ScreenSchedule::Update,
-            (player_systems().take(), tracking_cam_systems().take()),
-        );
+        builder.add_systems(ScreenSchedule::Update, player_systems().take());
         builder
     }
 }

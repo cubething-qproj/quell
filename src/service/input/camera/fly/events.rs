@@ -54,20 +54,6 @@ fn gate_input(
     }
 }
 
-fn on_screen_changed(
-    _: On<ScreenChanged>,
-    mut cameras: Query<(&Camera, &mut FreeCameraState, &mut FreeCameraInput)>,
-    mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>,
-) {
-    for (camera, mut state, mut input) in &mut cameras {
-        if camera.is_active {
-            cursor.grab_mode = CursorGrabMode::None;
-            cursor.visible = true;
-        }
-        input.reset(&mut state);
-    }
-}
-
 fn on_remove(
     event: On<Remove, FreeCamera>,
     cameras: Query<&Camera>,
@@ -89,6 +75,5 @@ pub fn plugin(app: &mut App) {
             .in_set(RunFixedMainLoopSystems::BeforeFixedMainLoop)
             .before(run_freecamera_controller),
     )
-    .add_observer(on_screen_changed)
     .add_observer(on_remove);
 }

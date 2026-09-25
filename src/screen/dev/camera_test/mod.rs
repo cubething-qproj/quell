@@ -9,5 +9,7 @@ pub mod prelude {
 }
 
 pub fn plugin(app: &mut App) {
-    app.register_screen::<CameraTestScreen>();
+    app.register_screen::<CameraTestScreen>()
+        .add_input_context::<CameraTestInput>()
+        .add_observer(screen::switch_camera);
 }

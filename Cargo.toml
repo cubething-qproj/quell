@@ -38,6 +38,9 @@ q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^
 q_term = { git = "https://github.com/cubething-qproj/q_term", version = "^0.1.0" }
 bevy-inspector-egui = "0.37.0"
 
+[dev-dependencies]
+q_test_harness = { git = "https://github.com/cubething-qproj/q_test_harness", version = "^0.1" }
+
 [build-dependencies]
 built = {version = "0.8.0", features=["chrono"]}
 

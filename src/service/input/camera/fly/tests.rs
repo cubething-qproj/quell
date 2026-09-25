@@ -2,12 +2,12 @@ use std::{any::TypeId, time::Duration};
 
 use crate::prelude::*;
 use bevy::{
-    input::{
-        mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll},
-        touch::Touches,
-    },
+    ecs::schedule::ScheduleLabel,
+    input::mouse::AccumulatedMouseScroll,
     window::{CursorGrabMode, CursorOptions, PrimaryWindow},
 };
+
+use q_test_harness::prelude::{AppExt as _, InputTestPlugin};
 
 struct Fixture {
     app: App,
@@ -20,29 +20,20 @@ impl Fixture {
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
+            InputTestPlugin,
             EnhancedInputPlugin,
             crate::service::input::plugin,
-        ))
-        .init_resource::<ButtonInput<KeyCode>>()
-        .init_resource::<ButtonInput<MouseButton>>()
-        .init_resource::<AccumulatedMouseMotion>()
-        .init_resource::<AccumulatedMouseScroll>()
-        .init_resource::<Touches>()
-        .add_message::<AppExit>();
+        ));
         // Enhanced Input initializes registered contexts in Plugin::finish.
         app.finish();
         app.cleanup();
-        let window = app
-            .world_mut()
-            .spawn((
-                Window {
-                    focused: true,
-                    ..default()
-                },
-                PrimaryWindow,
-                CursorOptions::default(),
-            ))
-            .id();
+        let window = {
+            let world = app.world_mut();
+            world
+                .query_filtered::<Entity, With<PrimaryWindow>>()
+                .single(world)
+                .unwrap()
+        };
         app.world_mut().trigger(SpawnGlobalCtx);
         app.world_mut().trigger(SpawnCursorCapture);
         app.world_mut().flush();
@@ -55,45 +46,22 @@ impl Fixture {
     }
 
     fn tick(&mut self) {
-        let world = self.app.world_mut();
-        let dt = Duration::from_millis(16);
-        world.resource_mut::<Time<Real>>().advance_by(dt);
-        world.resource_mut::<Time>().advance_by(dt);
-        // Do not run InputPlugin: its OS-event processing would clear manual input.
-        world.run_schedule(PreUpdate);
-        world.run_schedule(RunFixedMainLoop);
-        world.resource_mut::<ButtonInput<KeyCode>>().clear();
-        world.resource_mut::<ButtonInput<MouseButton>>().clear();
-        world.resource_mut::<AccumulatedMouseMotion>().delta = Vec2::ZERO;
-        world.resource_mut::<AccumulatedMouseScroll>().delta = Vec2::ZERO;
+        self.app.step(
+            Duration::from_millis(16),
+            [PreUpdate.intern(), RunFixedMainLoop.intern()],
+        );
     }
 
     fn key(&mut self, key: KeyCode, pressed: bool) {
-        let mut keys = self.app.world_mut().resource_mut::<ButtonInput<KeyCode>>();
-        if pressed {
-            keys.press(key);
-        } else {
-            keys.release(key);
-        }
+        self.app.key(key, pressed);
     }
 
     fn mouse(&mut self, button: MouseButton, pressed: bool) {
-        let mut buttons = self
-            .app
-            .world_mut()
-            .resource_mut::<ButtonInput<MouseButton>>();
-        if pressed {
-            buttons.press(button);
-        } else {
-            buttons.release(button);
-        }
+        self.app.mouse(button, pressed);
     }
 
     fn motion(&mut self) {
-        self.app
-            .world_mut()
-            .resource_mut::<AccumulatedMouseMotion>()
-            .delta = Vec2::new(12.0, 6.0);
+        self.app.motion(Vec2::new(12.0, 6.0));
     }
 
     fn transform(&self) -> Transform {

@@ -32,8 +32,3 @@ pub enum CameraOrder {
     Player,
     Ui,
 }
-
-/// The currently active camera view.
-/// For the cycle_cam dev command.
-#[derive(Resource, Debug, Deref, DerefMut, Default)]
-pub struct ActiveCamera(usize);

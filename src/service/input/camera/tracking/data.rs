@@ -1,46 +1,20 @@
 use crate::prelude::*;
 
-/// Tracking camera. Will follow the given entity. Will spawn a CameraController on add.
-/// Prefer to use [tracking_cam_bundle].
+/// An unparented, childless camera following a target in world space.
+/// Orbit orientation is owned by the camera's `Transform.rotation`.
 #[derive(Component, Debug, Reflect)]
-#[require(CameraController::new(CameraControllerKind::Tracking))]
-#[component(on_add=on_add_tracking_cam)]
-pub struct TrackingCam {
-    /// In radians.
-    pub rotation: Vec2,
-    /// radius of outer sphere. used for zoom and camera collisions.
-    pub outer_radius: f32,
-    /// Tracking entity.
-    pub entity: Entity,
+pub struct SpringArm {
+    pub target: Entity,
+    pub target_offset: Vec3,
+    pub length: f32,
 }
-impl TrackingCam {
-    pub fn new(entity: Entity) -> Self {
+
+impl SpringArm {
+    pub fn new(target: Entity) -> Self {
         Self {
-            rotation: Vec2::ZERO,
-            outer_radius: 10.,
-            entity,
+            target,
+            target_offset: Vec3::ZERO,
+            length: 10.,
         }
     }
 }
-fn on_add_tracking_cam(mut world: DeferredWorld, ctx: HookContext) {
-    let tracked = world
-        .entity(ctx.entity)
-        .get_ref::<TrackingCam>()
-        .unwrap()
-        .entity;
-    world
-        .commands()
-        .entity(ctx.entity)
-        .insert(Tracking(tracked));
-}
-
-#[derive(Component, Debug, Reflect)]
-#[relationship(relationship_target = Tracking)]
-pub struct TrackedBy {
-    #[relationship]
-    tracker: Entity,
-}
-
-#[derive(Component, Debug, Reflect)]
-#[relationship_target(relationship = TrackedBy)]
-pub struct Tracking(Entity);
