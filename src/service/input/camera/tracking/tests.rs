@@ -157,6 +157,7 @@ fn follow_skips_missing_targets_and_handles_zero_length_without_rotating() {
         target,
         target_offset: offset,
         length: 0.,
+        ..SpringArm::new(target)
     });
     world.run_schedule(PostUpdate);
     let local = world.get::<Transform>(f.camera).unwrap();

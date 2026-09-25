@@ -6,6 +6,8 @@ mod events;
 mod systems;
 
 #[cfg(test)]
+mod collision_tests;
+#[cfg(test)]
 mod tests;
 
 pub mod prelude {

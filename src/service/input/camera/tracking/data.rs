@@ -6,7 +6,10 @@ use crate::prelude::*;
 pub struct SpringArm {
     pub target: Entity,
     pub target_offset: Vec3,
+    /// Desired sphere-center distance; finite and nonnegative.
     pub length: f32,
+    /// Positive, finite probe radius. This does not guarantee near-plane clearance.
+    pub probe_radius: f32,
 }
 
 impl SpringArm {
@@ -15,6 +18,7 @@ impl SpringArm {
             target,
             target_offset: Vec3::ZERO,
             length: 10.,
+            probe_radius: 0.3,
         }
     }
 }

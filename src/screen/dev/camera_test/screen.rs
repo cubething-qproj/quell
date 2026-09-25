@@ -45,7 +45,7 @@ fn init(
             Transform::default(),
             Mesh3d(cube),
             MeshMaterial3d(material.clone()),
-            Collider::cuboid(0., 0., 0.),
+            Collider::cuboid(1., 1., 1.),
         ))
         .id();
     commands.spawn((
@@ -58,7 +58,7 @@ fn init(
         Transform::from_xyz(0., 0., -10.),
         Mesh3d(wall),
         MeshMaterial3d(material),
-        Collider::half_space(Vec3::Z),
+        Collider::cuboid(100., 100., 1.),
     ));
     commands.spawn((PointLight::default(), Transform::from_xyz(0., 3., 0.)));
     commands.trigger(SpawnGlobalCtx);

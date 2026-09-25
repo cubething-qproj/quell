@@ -17,6 +17,7 @@ fn spawn_player_root(
             (
                 RigidBody::Dynamic,
                 Collider::capsule(PLAYER_CAPSULE_RADIUS, PLAYER_CAPSULE_HEIGHT),
+                CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
                 LockedAxes::ROTATION_LOCKED.unlock_rotation_y(),
                 Friction::ZERO,
             ),
@@ -184,6 +185,54 @@ mod tests {
             );
             self.assert_stopped();
         }
+    }
+
+    #[test]
+    fn spawned_player_keeps_world_contacts_with_player_membership() {
+        let mut app = App::new();
+        let dt = Duration::from_millis(16);
+        app.add_plugins((MinimalPlugins, TransformPlugin))
+            .init_resource::<Assets<Mesh>>()
+            .add_message::<AssetEvent<Mesh>>()
+            .init_resource::<PlayerAssets>()
+            .add_plugins((PhysicsPlugins::default(), super::plugin))
+            .insert_resource(Time::<Fixed>::from_duration(dt))
+            .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(dt));
+        app.finish();
+        app.cleanup();
+        let world = app.world_mut();
+        world.trigger(SpawnPlayerRoot);
+        world.flush();
+        let player = world
+            .query_filtered::<Entity, With<PlayerController>>()
+            .single(world)
+            .unwrap();
+        let start_height = PLAYER_CAPSULE_HEIGHT + 2. * PLAYER_CAPSULE_RADIUS + 2.;
+        world
+            .entity_mut(player)
+            .insert(Transform::from_xyz(0., start_height, 0.));
+        world.spawn((
+            RigidBody::Static,
+            Collider::half_space(Vec3::Y),
+            Transform::default(),
+        ));
+        // Exercise actual collision response, not just a layer-mask comparison.
+        for _ in 0..180 {
+            app.update();
+        }
+        let world = app.world_mut();
+        assert_eq!(world.get::<ColliderOf>(player).unwrap().body, player);
+        for (owner, layers) in world.query::<(&ColliderOf, &CollisionLayers)>().iter(world) {
+            if owner.body == player {
+                assert_ne!(layers.memberships.0 & CollisionLayer::Player.to_bits(), 0);
+            }
+        }
+        let height = world.get::<Position>(player).unwrap().y;
+        assert!(
+            height > 0. && height < start_height - 1.,
+            "height: {height}"
+        );
+        assert!(world.get::<LinearVelocity>(player).unwrap().y.abs() < 0.1);
     }
 
     #[test]
