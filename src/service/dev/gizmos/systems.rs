@@ -3,7 +3,7 @@ use crate::prelude::*;
 fn render_camera_gizmos(
     mut cam_gizmos: Gizmos<CameraGizmoConfigGroup>,
     config_store: Res<GizmoConfigStore>,
-    fly_cam: Query<&Transform, With<FlyCam>>,
+    fly_cam: Query<&Transform, With<FreeCamera>>,
     player_cam: Query<(&Transform, &TrackingCam), With<TrackingCam>>,
     player_tf: Query<&Transform, With<PlayerController>>,
 ) {

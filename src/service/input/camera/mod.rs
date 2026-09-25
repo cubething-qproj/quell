@@ -2,6 +2,7 @@ use crate::prelude::*;
 
 mod controller;
 mod data;
+#[cfg(feature = "dev")]
 mod fly;
 mod tracking;
 
@@ -9,6 +10,7 @@ pub mod prelude {
     pub use super::camera_systems;
     pub use super::controller::prelude::*;
     pub use super::data::*;
+    #[cfg(feature = "dev")]
     pub use super::fly::prelude::*;
     pub use super::tracking::prelude::*;
     #[doc(hidden)]
@@ -22,6 +24,8 @@ pub fn camera_systems() -> ServiceSystems {
 }
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins((tracking::plugin, fly::plugin, controller::plugin))
+    app.add_plugins((tracking::plugin, controller::plugin))
         .init_resource::<ActiveCamera>();
+    #[cfg(feature = "dev")]
+    app.add_plugins(fly::plugin);
 }

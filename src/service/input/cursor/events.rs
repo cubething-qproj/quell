@@ -6,23 +6,17 @@ fn on_capture_cursor(
     _: On<Complete<PACaptureCursor>>,
     mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>,
     mut commands: Commands,
-    ictx_cam_default: Query<(Entity, &Camera), (With<TrackingCam>, Without<FlyCam>)>,
-    ictx_flycam: Query<(Entity, &Camera), (With<FlyCam>, Without<TrackingCam>)>,
+    ictx_cam_default: Query<(Entity, &Camera), With<TrackingCam>>,
 ) {
-    cursor.visible = false;
-    cursor.grab_mode = CursorGrabMode::Locked;
+    // Free cameras use upstream RMB/M capture, not the tracking click binding.
+    if let Ok((ictx, cam)) = ictx_cam_default.single()
+        && cam.is_active
     {
-        // switch based on active camera
-        if let Ok((ictx, cam)) = ictx_cam_default.single() {
-            commands
-                .entity(ictx)
-                .insert(ContextActivity::<CameraController>::new(cam.is_active));
-        }
-        if let Ok((ictx, cam)) = ictx_flycam.single() {
-            commands
-                .entity(ictx)
-                .insert(ContextActivity::<CameraController>::new(cam.is_active));
-        }
+        cursor.visible = false;
+        cursor.grab_mode = CursorGrabMode::Locked;
+        commands
+            .entity(ictx)
+            .insert(ContextActivity::<CameraController>::ACTIVE);
     }
 }
 fn on_release_cursor(
@@ -30,7 +24,7 @@ fn on_release_cursor(
     mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>,
     mut commands: Commands,
     ictx_cam_default: Query<Entity, With<ContextActivity<CameraController>>>,
-    #[cfg(feature = "dev")] ictx_flycam: Query<Entity, With<ContextActivity<FlyCam>>>,
+    #[cfg(feature = "dev")] mut free_cameras: Query<(&mut FreeCameraState, &mut FreeCameraInput)>,
 ) {
     debug!("release_mouse");
     cursor.visible = true;
@@ -41,12 +35,8 @@ fn on_release_cursor(
             .insert(ContextActivity::<CameraController>::INACTIVE);
     }
     #[cfg(feature = "dev")]
-    {
-        if let Ok(ictx_flycam) = ictx_flycam.single() {
-            commands
-                .entity(ictx_flycam)
-                .insert(ContextActivity::<CameraController>::INACTIVE);
-        }
+    for (mut state, mut input) in &mut free_cameras {
+        input.reset(&mut state);
     }
 }
 

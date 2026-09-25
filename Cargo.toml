@@ -44,5 +44,6 @@ built = {version = "0.8.0", features=["chrono"]}
 [features]
 dev = [
     "dep:bevy_mod_debugdump",
+    "bevy/free_camera",
 ]
 dylib = ["bevy/dynamic_linking"]
