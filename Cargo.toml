@@ -18,36 +18,34 @@ clippy.nonstandard_macro_braces = "warn"
 bevy = "0.19"
 bevy_enhanced_input = "0.26"
 bevy_asset_loader = "0.27"
-bevy_mod_debugdump = { optional = true, version = "0.16" }
 avian3d = "0.7"
 bevy-tnua = "0.32"
 bevy-tnua-avian3d = "0.12"
 
 # not bevy
 tiny_bail = "0.7"
-itertools = "0.14.0"
-thiserror = "2.0.12"
 bitflags = "2.9.3"
-serde = { version = "1.0.219", features = ["derive"] }
-anyhow = "1.0.99"
-strum = { version = "0.27.2", features = ["derive"] }
-variadics_please = "1.1.0"
-clap = {version = "4.5.54", features = ["derive"] }
 
 q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^0.1.0" }
-q_term = { git = "https://github.com/cubething-qproj/q_term", version = "^0.1.0" }
 q_cam = { git = "https://github.com/cubething-qproj/q_cam", version = "^0.1.0" }
-bevy-inspector-egui = "0.37.0"
+
+# dev
+clap = { optional = true, version = "4.5.54", features = ["derive"] }
+q_term = { optional = true, git = "https://github.com/cubething-qproj/q_term", version = "^0.1.0" }
+bevy-inspector-egui = { optional = true, version = "0.37.0" }
 
 [dev-dependencies]
 q_test_harness = { git = "https://github.com/cubething-qproj/q_test_harness", version = "^0.1" }
 
 [build-dependencies]
-built = {version = "0.8.0", features=["chrono"]}
+built = { optional = true, version = "0.8.0", features = ["chrono"] }
 
 [features]
 dev = [
-    "dep:bevy_mod_debugdump",
+    "dep:clap",
+    "dep:q_term",
+    "dep:bevy-inspector-egui",
+    "dep:built",
     "q_cam/free_camera",
 ]
 dylib = ["bevy/dynamic_linking"]
