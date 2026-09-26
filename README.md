@@ -1,5 +1,7 @@
 # quell
 
+[![Coverage Status](https://coveralls.io/repos/github/cubething-qproj/quell/badge.svg)](https://coveralls.io/github/cubething-qproj/quell)
+
 A game built with Bevy.
 
 ## License
