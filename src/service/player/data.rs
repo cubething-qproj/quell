@@ -20,23 +20,6 @@ impl Default for PlayerSettings {
     }
 }
 
-#[derive(Resource, Reflect, Debug)]
-#[reflect(Resource)]
-pub struct PlayerCameraSettings {
-    /// Currently unused; orbit uses the mouse/stick binding sensitivities.
-    pub rotation_speed: f32,
-    pub zoom_speed: f32,
-}
-
-impl Default for PlayerCameraSettings {
-    fn default() -> Self {
-        Self {
-            rotation_speed: 10.,
-            zoom_speed: -5.,
-        }
-    }
-}
-
 #[derive(SystemSet, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerSystems;
 

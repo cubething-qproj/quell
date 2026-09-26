@@ -35,7 +35,7 @@ fn on_rotate(
 
 fn on_zoom(
     trigger: On<Fire<PAZoomCam>>,
-    settings: Res<PlayerCameraSettings>,
+    settings: Res<SpringArmCameraSettings>,
     mut cameras: Query<(&Camera, &ContextActivity<SpringArm>, &mut Projection), With<SpringArm>>,
     window: Query<(&Window, &CursorOptions), With<PrimaryWindow>>,
 ) {

@@ -1,6 +1,8 @@
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 
 use crate::prelude::*;
+#[cfg(feature = "dev")]
+use q_cam::free::FreeCameraInput;
 
 fn on_capture_cursor(
     trigger: On<Complete<PACaptureCursor>>,

@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use q_cam::free::FreeCameraInput;
 
 pub fn flycam_bundle() -> impl Bundle {
     let mut state = FreeCameraState::default();
