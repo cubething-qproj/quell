@@ -5,14 +5,16 @@
 codegen-backend = true
 
 [profile.dev]
-codegen-backend = "cranelift"
+# cranelift currently has broken intrinsics
+# codegen-backend = "cranelift"
+codegen-backend = "llvm"
 
 # Linux builds
-[target.nightly-x86_64-unknown-linux-gnu]
-linker = "mold"
+[target.x86_64-unknown-linux-gnu]
+linker = "clang"
 rustflags = [
     # Nightly
     "-Zshare-generics=y",
     "-Zthreads=0",
-    "-Clink-arg=-fuse-ld=/usr/bin/mold",
+    "-Clink-arg=-fuse-ld=mold",
 ]
