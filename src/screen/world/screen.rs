@@ -44,6 +44,21 @@ fn init(mut commands: Commands) {
     debug!("in world: init");
     commands.trigger(SpawnPlayerRoot);
     commands.trigger(SpawnWorldgenRoot);
+    commands.trigger(SpawnGlobalCtx);
+    commands.trigger(SpawnCursorCapture);
+    #[cfg(feature = "dev")]
+    {
+        commands.spawn(flycam_bundle()).insert((
+            Camera {
+                order: CameraOrder::World as isize,
+                is_active: false,
+                ..default()
+            },
+            ScreenScoped,
+            Name::new("Free Camera"),
+        ));
+        commands.spawn(CameraTestInput::bundle());
+    }
 }
 
 pub fn plugin(app: &mut App) {

@@ -21,7 +21,7 @@ pub fn spawn_worldgen_root(
     commands.spawn((
         WorldgenRoot,
         GlobalTransform::IDENTITY,
-        Visibility::Hidden,
+        Visibility::Visible,
         Name::new("WorldgenRoot"),
         ScreenScoped,
         children![(

@@ -15,6 +15,7 @@ fn exit_app(
 fn spawn_global_ctx(_: On<SpawnGlobalCtx>, mut commands: Commands) {
     commands.spawn((
         ICtxGlobal,
+        ScreenScoped,
         ContextActivity::<ICtxGlobal>::ACTIVE,
         ContextPriority::<ICtxGlobal>::new(1000),
         actions![

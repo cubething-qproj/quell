@@ -61,11 +61,11 @@ fn spawn_cursor_capture(_trigger: On<SpawnCursorCapture>, mut commands: Commands
     debug!("spawn_capture_cursor_actions");
     commands.spawn((
         Name::new("Cursor capture"),
+        ScreenScoped,
         ICtxCaptureCursor::default(),
         ContextActivity::<ICtxCaptureCursor>::ACTIVE,
         // Quit (1000) checks capture first; release then precedes camera input (0).
         ContextPriority::<ICtxCaptureCursor>::new(500),
-        // todo: state scope?
         actions![
             ICtxCaptureCursor[
                 (
