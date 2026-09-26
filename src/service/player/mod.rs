@@ -10,6 +10,8 @@ pub mod prelude {
 }
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins(events::plugin)
+    app.init_resource::<PlayerSettings>()
+        .register_type::<PlayerSettings>()
+        .add_plugins(events::plugin)
         .add_input_context::<ICtxDefault>();
 }

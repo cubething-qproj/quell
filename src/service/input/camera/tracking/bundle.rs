@@ -1,51 +1,46 @@
 use crate::prelude::*;
 
-pub fn tracking_cam_bundle(tracking: Entity) -> impl Bundle {
+pub fn tracking_cam_bundle(target: Entity) -> impl Bundle {
     (
-        TrackingCam::new(tracking),
-        // rendering
-        (
-            CameraController {
-                active: true,
-                enabled: true,
-                kind: CameraControllerKind::Tracking,
-            },
-            Camera {
-                order: CameraOrder::World as isize,
-                is_active: true,
-                ..Default::default()
-            },
-            RenderLayers::from(
-                RenderLayer::DEFAULT | RenderLayer::GIZMOS_3D | RenderLayer::PARTICLES,
-            ),
-        ),
-        // actions
-        (
-            ContextActivity::<CameraController>::ACTIVE,
-            actions![
-                CameraController[
+        SpringArm::new(target),
+        Camera3d::default(),
+        Camera {
+            order: CameraOrder::World as isize,
+            is_active: true,
+            ..Default::default()
+        },
+        Transform::default(),
+        RenderLayers::from(RenderLayer::DEFAULT | RenderLayer::GIZMOS_3D | RenderLayer::PARTICLES),
+        ContextActivity::<SpringArm>::INACTIVE,
+        actions![
+            SpringArm[
                 (
                     Action::<PARotateCam>::new(),
                     Bindings::spawn((
-                        Axial::right_stick().with((Scale::splat(2.0), Negate::x())),
+                        Axial::right_stick().with((
+                            DeadZone::default(),
+                            Scale::splat(2.0),
+                            Negate::x(),
+                            DeltaScale::default(),
+                        )),
                         Spawn((Binding::mouse_motion(), Scale::splat(0.01), Negate::all()))
                     )),
                 ),
                 (
                     Action::<PAZoomCam>::new(),
-                    DeadZone::default(),
+                    DeadZone {
+                        kind: DeadZoneKind::Radial,
+                        lower_threshold: 0.,
+                        upper_threshold: 1.,
+                    },
                     SmoothNudge::default(),
-                    Scale::splat(PLAYER_CAM_ZOOM_SPD),
-                    Bindings::spawn(
-                        (
-                            Axial::right_stick(),
-                            Spawn(
-                                (Binding::mouse_wheel(), Scale::splat(0.1), SwizzleAxis::YXZ))
-                        )
-                    )
+                    Bindings::spawn(Spawn((
+                        Binding::mouse_wheel(),
+                        Scale::splat(0.1),
+                        SwizzleAxis::YXZ,
+                    )))
                 ),
-                ]
-            ],
-        ),
+            ]
+        ],
     )
 }

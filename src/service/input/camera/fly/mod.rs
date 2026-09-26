@@ -1,15 +1,9 @@
-use crate::prelude::*;
-
 mod bundle;
-mod data;
-mod events;
+
+#[cfg(test)]
+mod tests;
 
 pub mod prelude {
     pub use super::bundle::flycam_bundle;
-    pub use super::data::*;
-}
-
-pub fn plugin(app: &mut App) {
-    app.add_plugins(events::plugin)
-        .add_input_context::<FlyCam>();
+    pub use bevy::camera_controller::free_camera::{FreeCamera, FreeCameraState};
 }

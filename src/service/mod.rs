@@ -5,6 +5,8 @@ mod data;
 #[cfg(feature = "dev")]
 mod dev;
 mod input;
+#[cfg(all(test, feature = "dev"))]
+pub(crate) use input::plugin as input_plugin;
 mod player;
 mod third_party;
 mod ui;

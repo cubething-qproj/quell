@@ -1,12 +1,21 @@
 use crate::prelude::*;
+use bevy::window::PrimaryWindow;
 
 fn update_controller(
     mut query: Single<(&mut PlayerTnuaController, &mut PlayerController)>,
-    cam_tf: Single<&Transform, With<TrackingCam>>,
+    camera: Single<(&Camera, &Transform), With<SpringArm>>,
+    window: Single<&Window, With<PrimaryWindow>>,
 ) {
     let (tnua, controller) = &mut *query;
 
-    let yaw = cam_tf.rotation.to_euler(EulerRot::YXZ).0;
+    if !camera.0.is_active || !window.focused {
+        controller.last_move = None;
+        tnua.basis.desired_motion = Vec3::ZERO;
+        tnua.basis.desired_forward = None;
+        return;
+    }
+
+    let yaw = camera.1.rotation.to_euler(EulerRot::YXZ).0;
     let yaw_quat = Quat::from_axis_angle(Vec3::Y, yaw);
     let moved = controller.last_move.is_some();
     let last_move = controller.last_move.take().unwrap_or_default();
@@ -21,7 +30,7 @@ fn update_controller(
     // NOTE: THIS MAY BREAK THINGS
     // tnua.basis(TnuaBuiltinWalk {
     //     desired_velocity: yaw_quat * last_move,
-    //     float_height: PLAYER_CAPSULE_HEIGHT / 2. + PLAYER_CAPSULE_RADIUS,
+    //     float_height: settings.capsule_height / 2. + settings.capsule_radius,
     //     desired_forward,
     //     turning_angvel: 10000.,
     //     ..Default::default()
