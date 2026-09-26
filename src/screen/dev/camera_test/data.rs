@@ -7,7 +7,7 @@ pub struct Cube;
 pub struct CameraTestInput;
 
 impl CameraTestInput {
-    pub(super) fn bundle() -> impl Bundle {
+    pub(crate) fn bundle() -> impl Bundle {
         (
             Self,
             ScreenScoped,
