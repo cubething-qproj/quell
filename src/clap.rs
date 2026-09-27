@@ -28,6 +28,5 @@ pub fn parse_args() -> AppSettings {
 
     AppSettings {
         initial_screen: args.screen,
-        ..Default::default()
     }
 }
