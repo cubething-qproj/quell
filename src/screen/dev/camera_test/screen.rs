@@ -385,9 +385,10 @@ mod tests {
         f.left_click();
         f.assert_capture(true);
 
-        let mut controller = PlayerTnuaController::default();
-        controller.basis.desired_motion = Vec3::X;
-        controller.basis.desired_forward = Some(Dir3::X);
+        let motor = PlayerMotor {
+            desired_velocity: Vec3::X,
+            desired_forward: Some(Dir3::X),
+        };
         let player = f
             .app
             .world_mut()
@@ -397,7 +398,7 @@ mod tests {
                 PlayerController {
                     last_move: Some(Vec3::X),
                 },
-                controller,
+                motor,
             ))
             .id();
         let free_pose = f.transform(f.free);
@@ -438,9 +439,9 @@ mod tests {
                 .last_move
                 .is_none()
         );
-        let controller = world.get::<PlayerTnuaController>(player).unwrap();
-        assert_eq!(controller.basis.desired_motion, Vec3::ZERO);
-        assert!(controller.basis.desired_forward.is_none());
+        let motor = world.get::<PlayerMotor>(player).unwrap();
+        assert_eq!(motor.desired_velocity, Vec3::ZERO);
+        assert!(motor.desired_forward.is_none());
 
         // RMB stayed held throughout both switches; it cannot recapture Free.
         f.tab(false);

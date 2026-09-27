@@ -1,5 +1,6 @@
 mod data;
 mod events;
+mod movement;
 mod systems;
 
 use crate::prelude::*;
@@ -12,6 +13,6 @@ pub mod prelude {
 pub fn plugin(app: &mut App) {
     app.init_resource::<PlayerSettings>()
         .register_type::<PlayerSettings>()
-        .add_plugins(events::plugin)
+        .add_plugins((events::plugin, movement::plugin))
         .add_input_context::<ICtxDefault>();
 }

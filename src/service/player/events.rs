@@ -1,5 +1,4 @@
 use bevy::window::PrimaryWindow;
-use bevy_tnua_avian3d::TnuaAvian3dSensorShape;
 
 use crate::prelude::*;
 
@@ -16,15 +15,14 @@ fn spawn_player_root(
             ScreenScoped,
             WorldAssetRoot(player_assets.model.clone()),
             (
-                RigidBody::Dynamic,
+                PlayerMotor::default(),
+                // Spawn resting on the ground (assumed at y = 0): move-and-slide can't
+                // resolve deep initial penetration.
+                Transform::from_xyz(0., settings.resting_height(), 0.),
                 Collider::capsule(settings.capsule_radius, settings.capsule_height),
                 CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
-                LockedAxes::ROTATION_LOCKED.unlock_rotation_y(),
-                Friction::ZERO,
             ),
             (
-                PlayerTnuaController::default(),
-                TnuaAvian3dSensorShape(Collider::cylinder(settings.capsule_radius + 0.1, 0.)),
                 ICtxDefault,
                 ContextActivity::<ICtxDefault>::ACTIVE,
                 actions!(
@@ -89,10 +87,13 @@ mod tests {
             app.add_plugins((
                 MinimalPlugins,
                 InputTestPlugin,
+                TransformPlugin,
                 EnhancedInputPlugin,
                 crate::service::input::plugin,
-                super::super::plugin,
             ))
+            .init_resource::<Assets<Mesh>>()
+            .add_message::<AssetEvent<Mesh>>()
+            .add_plugins((PhysicsPlugins::default(), super::super::plugin))
             .init_resource::<PlayerAssets>()
             .add_systems(Update, player_systems().take());
             app.finish();
@@ -136,10 +137,9 @@ mod tests {
         fn desired_motion(&self) -> Vec3 {
             self.app
                 .world()
-                .get::<PlayerTnuaController>(self.player)
+                .get::<PlayerMotor>(self.player)
                 .unwrap()
-                .basis
-                .desired_motion
+                .desired_velocity
         }
 
         fn warm_move(&mut self) {
@@ -208,7 +208,7 @@ mod tests {
     }
 
     #[test]
-    fn spawned_player_keeps_world_contacts_with_player_membership() {
+    fn spawned_player_lands_on_the_ground_with_player_membership() {
         let mut app = App::new();
         let dt = Duration::from_millis(16);
         app.add_plugins((MinimalPlugins, TransformPlugin))
@@ -220,7 +220,11 @@ mod tests {
                 capsule_radius: 0.75,
                 ..default()
             })
-            .add_plugins((PhysicsPlugins::default(), super::plugin))
+            .add_plugins((
+                PhysicsPlugins::default(),
+                super::plugin,
+                super::super::movement::plugin,
+            ))
             .insert_resource(Time::<Fixed>::from_duration(dt))
             .insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(dt));
         app.finish();
@@ -232,10 +236,7 @@ mod tests {
             .query_filtered::<Entity, With<PlayerController>>()
             .single(world)
             .unwrap();
-        let settings = world.resource::<PlayerSettings>();
-        let resting_height = settings.capsule_height / 2. + settings.capsule_radius;
-        let sensor = &world.get::<TnuaAvian3dSensorShape>(player).unwrap().0;
-        assert!(sensor.shape().as_cylinder().unwrap().radius > settings.capsule_radius);
+        let resting_height = world.resource::<PlayerSettings>().resting_height();
         let start_height = resting_height + 4.;
         world
             .entity_mut(player)
@@ -245,7 +246,7 @@ mod tests {
             Collider::half_space(Vec3::Y),
             Transform::default(),
         ));
-        // Exercise actual collision response, not just a layer-mask comparison.
+        // Let the player fall and land through `move_player`, not just compare layer masks.
         for _ in 0..180 {
             app.update();
         }

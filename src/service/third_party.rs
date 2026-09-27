@@ -7,15 +7,10 @@ pub mod prelude {
     pub use bevy_enhanced_input::prelude::*;
     // fix ambiguous glob exports
     pub use bevy_enhanced_input::prelude::{Cancel, Press, Release};
-    pub use bevy_tnua::prelude::*;
     pub use tiny_bail::prelude::*;
 }
 
 pub fn plugin(app: &mut App) {
-    app.add_plugins((
-        avian3d::PhysicsPlugins::default(),
-        TnuaControllerPlugin::<PlayerControlScheme>::new(FixedUpdate),
-        bevy_tnua_avian3d::TnuaAvian3dPlugin::new(FixedUpdate),
-    ));
+    app.add_plugins(avian3d::PhysicsPlugins::default());
     app.add_plugins((EnhancedInputPlugin,));
 }

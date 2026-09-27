@@ -95,7 +95,7 @@ fn sync_contexts(
         Entity,
         &ContextActivity<ICtxDefault>,
         &mut PlayerController,
-        &mut PlayerTnuaController,
+        &mut PlayerMotor,
     )>,
     mut commands: Commands,
 ) {
@@ -119,7 +119,7 @@ fn sync_contexts(
                 .insert(ContextActivity::<SpringArm>::new(enabled));
         }
     }
-    for (entity, activity, mut player, mut controller) in &mut players {
+    for (entity, activity, mut player, mut motor) in &mut players {
         let enabled = tracking_selected && window.focused;
         if **activity != enabled {
             commands
@@ -128,8 +128,8 @@ fn sync_contexts(
         }
         if !enabled {
             player.last_move = None;
-            controller.basis.desired_motion = Vec3::ZERO;
-            controller.basis.desired_forward = None;
+            motor.desired_velocity = Vec3::ZERO;
+            motor.desired_forward = None;
         }
     }
     if !window.focused && cursor.grab_mode != CursorGrabMode::None {

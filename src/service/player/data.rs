@@ -1,13 +1,22 @@
 use crate::prelude::*;
+use std::f32::consts::FRAC_PI_4;
 
 #[derive(Resource, Reflect, Debug)]
 #[reflect(Resource)]
 pub struct PlayerSettings {
+    /// Length of the capsule's cylindrical segment, excluding the rounded caps;
+    /// total height is `capsule_height + 2 * capsule_radius`.
     /// Applied when spawning the player, not to an existing collider.
     pub capsule_height: f32,
-    /// Applied when spawning the player and its movement sensor.
+    /// Applied when spawning the player, not to an existing collider.
     pub capsule_radius: f32,
     pub default_speed: f32,
+    /// Steepest walkable surface, in radians from horizontal.
+    pub max_slope: f32,
+    /// Distance of the downward ground probe and snap after each move.
+    pub ground_snap: f32,
+    /// Facing slew rate, in rad/s.
+    pub turn_speed: f32,
 }
 
 impl Default for PlayerSettings {
@@ -16,7 +25,17 @@ impl Default for PlayerSettings {
             capsule_height: 3.,
             capsule_radius: 0.5,
             default_speed: 10.,
+            max_slope: FRAC_PI_4,
+            ground_snap: 0.2,
+            turn_speed: 10.,
         }
+    }
+}
+
+impl PlayerSettings {
+    /// Height of the capsule's center when its base rests at y = 0.
+    pub fn resting_height(&self) -> f32 {
+        self.capsule_height / 2. + self.capsule_radius
     }
 }
 
@@ -47,8 +66,19 @@ pub struct PlayerAssets {
     pub model: Handle<WorldAsset>,
 }
 
-#[derive(TnuaScheme)]
-#[scheme(basis = TnuaBuiltinWalk)]
-pub enum PlayerControlScheme {}
-
-pub type PlayerTnuaController = TnuaController<PlayerControlScheme>;
+/// Movement intent consumed by the fixed-step player controller.
+#[derive(Component, Default)]
+#[require(
+    RigidBody::Kinematic,
+    // Only move-and-slide moves the body.
+    CustomPositionIntegration,
+    // No speculative contact impulses from the kinematic body.
+    SpeculativeMargin::ZERO,
+    TransformInterpolation
+)]
+pub struct PlayerMotor {
+    /// World-space horizontal velocity to walk at, in m/s.
+    pub desired_velocity: Vec3,
+    /// Facing to turn toward; `None` keeps the current facing.
+    pub desired_forward: Option<Dir3>,
+}
