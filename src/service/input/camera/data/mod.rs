@@ -19,8 +19,8 @@ bitflags! {
 }
 impl From<RenderLayer> for RenderLayers {
     fn from(layer: RenderLayer) -> Self {
-        // Render layers are just vectors of ints, so we convert each active bit to an int.
-        RenderLayers::from_iter(layer.iter().map(|l| (l.bits() >> 1) as usize))
+        // Render layers are just vectors of ints, so we convert each active bit to its index.
+        RenderLayers::from_iter(layer.iter().map(|l| l.bits().trailing_zeros() as usize))
     }
 }
 
