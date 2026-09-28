@@ -2,10 +2,9 @@ use crate::prelude::*;
 
 mod data;
 
-#[cfg(feature = "dev")]
 mod dev;
 mod input;
-#[cfg(all(test, feature = "dev"))]
+#[cfg(test)]
 pub(crate) use input::plugin as input_plugin;
 pub mod player;
 mod third_party;
@@ -15,7 +14,6 @@ mod worldgen;
 
 pub mod prelude {
     pub use super::data::*;
-    #[cfg(feature = "dev")]
     pub use super::dev::prelude::*;
     pub use super::input::prelude::*;
     pub use super::player::prelude::*;
@@ -31,7 +29,6 @@ pub fn plugin(app: &mut App) {
         ui::plugin,
         worldgen::plugin,
         player::plugin,
+        dev::plugin,
     ));
-    #[cfg(feature = "dev")]
-    app.add_plugins(dev::plugin);
 }

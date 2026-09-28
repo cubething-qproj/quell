@@ -19,31 +19,27 @@ bevy = "0.19"
 bevy_enhanced_input = "0.26"
 bevy_asset_loader = "0.27"
 avian3d = "0.7"
+# Loads Jackdaw-authored `.bsn` scenes, answers the editor's schema query and
+# connects Play-in-editor. 0.19 is git-only; keep `rev` matching the installed editor.
+jackdaw_runtime = { git = "https://github.com/jbuehler23/jackdaw", rev = "e3e5772bf511b2d9345f155004ad0eefda15aa2b", features = ["physics", "pie"] }
 
 # not bevy
 tiny_bail = "0.7"
 bitflags = "2.9.3"
 
 q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^0.1.0" }
-q_cam = { git = "https://github.com/cubething-qproj/q_cam", version = "^0.1.0" }
+q_cam = { git = "https://github.com/cubething-qproj/q_cam", version = "^0.1.0", features = ["free_camera"] }
 
-# dev
-clap = { optional = true, version = "4.5.54", features = ["derive"] }
-q_term = { optional = true, git = "https://github.com/cubething-qproj/q_term", version = "^0.1.0" }
-bevy-inspector-egui = { optional = true, version = "0.37.0" }
+# dev tooling
+clap = { version = "4.5.54", features = ["derive"] }
+q_term = { git = "https://github.com/cubething-qproj/q_term", version = "^0.1.0" }
+bevy-inspector-egui = { version = "0.37.0" }
 
 [dev-dependencies]
 q_test_harness = { git = "https://github.com/cubething-qproj/q_test_harness", version = "^0.1" }
 
 [build-dependencies]
-built = { optional = true, version = "0.8.0", features = ["chrono"] }
+built = { version = "0.8.0", features = ["chrono"] }
 
 [features]
-dev = [
-    "dep:clap",
-    "dep:q_term",
-    "dep:bevy-inspector-egui",
-    "dep:built",
-    "q_cam/free_camera",
-]
 dylib = ["bevy/dynamic_linking"]

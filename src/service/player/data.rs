@@ -50,7 +50,8 @@ pub struct PlayerSystems;
 #[derive(Event, Reflect, Copy, Clone, Debug)]
 pub struct SpawnPlayerRoot;
 
-#[derive(Component, Default)]
+#[derive(Component, Reflect, Default)]
+#[reflect(Component, Default)]
 #[require(Name::new("Player Controller"))]
 pub struct PlayerController {
     pub last_move: Option<Vec3>,
@@ -72,7 +73,8 @@ pub struct PlayerAssets {
 }
 
 /// Movement intent consumed by the fixed-step player controller.
-#[derive(Component, Default)]
+#[derive(Component, Reflect, Default)]
+#[reflect(Component, Default)]
 #[require(
     RigidBody::Kinematic,
     // Only move-and-slide moves the body.

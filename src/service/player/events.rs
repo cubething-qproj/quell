@@ -43,11 +43,7 @@ fn spawn_player_root(
         Name::new("PlayerCam"),
         ScreenScoped,
         (LockedAxes::new().lock_rotation_z(),),
-        (
-            #[cfg(feature = "dev")]
-            ShowLightGizmo::default(),
-            PointLight::default(),
-        ),
+        (PointLight::default()),
         tracking_cam_bundle(player_entt),
     ));
 }
