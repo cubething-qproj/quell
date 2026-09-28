@@ -2,16 +2,16 @@ use crate::prelude::*;
 use bevy::window::PrimaryWindow;
 
 fn update_controller(
-    mut query: Single<(&mut PlayerTnuaController, &mut PlayerController)>,
+    mut query: Single<(&mut PlayerMotor, &mut PlayerController)>,
     camera: Single<(&Camera, &Transform), With<SpringArm>>,
     window: Single<&Window, With<PrimaryWindow>>,
 ) {
-    let (tnua, controller) = &mut *query;
+    let (motor, controller) = &mut *query;
 
     if !camera.0.is_active || !window.focused {
         controller.last_move = None;
-        tnua.basis.desired_motion = Vec3::ZERO;
-        tnua.basis.desired_forward = None;
+        motor.desired_velocity = Vec3::ZERO;
+        motor.desired_forward = None;
         return;
     }
 
@@ -24,17 +24,8 @@ fn update_controller(
         .then_some(Dir3::new(-desired_velocity.normalize()).ok())
         .flatten();
 
-    tnua.basis.desired_forward = desired_forward;
-    tnua.basis.desired_motion = yaw_quat * last_move;
-
-    // NOTE: THIS MAY BREAK THINGS
-    // tnua.basis(TnuaBuiltinWalk {
-    //     desired_velocity: yaw_quat * last_move,
-    //     float_height: settings.capsule_height / 2. + settings.capsule_radius,
-    //     desired_forward,
-    //     turning_angvel: 10000.,
-    //     ..Default::default()
-    // });
+    motor.desired_forward = desired_forward;
+    motor.desired_velocity = desired_velocity;
 }
 
 pub fn systems() -> ServiceSystems {
