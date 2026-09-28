@@ -37,6 +37,11 @@ impl PlayerSettings {
     pub fn resting_height(&self) -> f32 {
         self.capsule_height / 2. + self.capsule_radius
     }
+
+    /// Whether a surface with outward `normal` is shallow enough to walk on.
+    pub fn walkable(&self, normal: Vec3) -> bool {
+        normal.angle_between(Vec3::Y) <= self.max_slope
+    }
 }
 
 #[derive(SystemSet, Copy, Clone, Debug, PartialEq, Eq, Hash)]
