@@ -27,7 +27,7 @@ jackdaw_runtime = { git = "https://github.com/jbuehler23/jackdaw", rev = "e3e577
 tiny_bail = "0.7"
 bitflags = "2.9.3"
 
-q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^0.1.0" }
+q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^0.2.0", features = ["bevy_picking", "bevy_gilrs"] }
 q_cam = { git = "https://github.com/cubething-qproj/q_cam", version = "^0.1.0" }
 
 # dev
