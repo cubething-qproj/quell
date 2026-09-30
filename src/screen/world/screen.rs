@@ -48,7 +48,7 @@ fn init(mut commands: Commands, server: Res<AssetServer>) {
         JackdawSceneRoot(server.load("scenes/scene.bsn")),
         ScreenScoped,
     ));
-    commands.trigger(SpawnWorldgenRoot);
+    // commands.trigger(SpawnWorldgenRoot);
     commands.trigger(SpawnGlobalCtx);
     commands.trigger(SpawnCursorCapture);
     #[cfg(feature = "dev")]
