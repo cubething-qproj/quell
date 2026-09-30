@@ -20,8 +20,9 @@ bevy_enhanced_input = "0.26"
 bevy_asset_loader = "0.27"
 avian3d = "0.7"
 # Loads Jackdaw-authored `.bsn` scenes, answers the editor's schema query and
-# connects Play-in-editor. 0.19 is git-only; keep `rev` matching the installed editor.
-jackdaw_runtime = { git = "https://github.com/jbuehler23/jackdaw", rev = "e3e5772bf511b2d9345f155004ad0eefda15aa2b", features = ["physics", "pie"] }
+# connects Play-in-editor. Tracks the ada-x64/jackdaw fork's `main` (upstream plus
+# local fixes); install the editor from the same branch.
+jackdaw_runtime = { git = "https://github.com/ada-x64/jackdaw", branch = "main", features = ["physics", "pie"] }
 
 # not bevy
 tiny_bail = "0.7"
