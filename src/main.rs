@@ -19,5 +19,10 @@ fn main() {
         quell::AppPlugin { settings },
         jackdaw_runtime::JackdawPlugin,
     ));
+    // Jackdaw's embedded Play streams frames through a `Readback` entity it spawns
+    // lazily; keep it alive across screen changes.
+    app.register_persistent_type::<bevy::render::gpu_readback::Readback>(
+        PersistentTypeScope::Anywhere,
+    );
     app.run();
 }
