@@ -40,7 +40,7 @@ impl Fixture {
         app.finish();
         app.cleanup();
         let world = app.world_mut();
-        world.trigger(SpawnPlayerRoot);
+        world.trigger(SpawnPlayerRoot::default());
         world.flush();
         let player = world
             .query_filtered::<Entity, With<PlayerMotor>>()

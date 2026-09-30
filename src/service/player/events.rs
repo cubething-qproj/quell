@@ -4,7 +4,7 @@ use crate::prelude::*;
 
 // TODO: Split this out into a bundle
 fn spawn_player_root(
-    _: On<SpawnPlayerRoot>,
+    trigger: On<SpawnPlayerRoot>,
     mut commands: Commands,
     player_assets: Res<PlayerAssets>,
     settings: Res<PlayerSettings>,
@@ -16,9 +16,11 @@ fn spawn_player_root(
             WorldAssetRoot(player_assets.model.clone()),
             (
                 PlayerMotor::default(),
-                // Spawn resting on the ground (assumed at y = 0): move-and-slide can't
-                // resolve deep initial penetration.
-                Transform::from_xyz(0., settings.resting_height(), 0.),
+                // Spawn resting on the ground: move-and-slide can't resolve deep
+                // initial penetration.
+                trigger.transform.with_translation(
+                    trigger.transform.translation + Vec3::Y * settings.resting_height(),
+                ),
                 Collider::capsule(settings.capsule_radius, settings.capsule_height),
                 CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
             ),
@@ -59,8 +61,28 @@ fn on_move(
         (camera.is_active && window.focused).then_some(trigger.value * settings.default_speed);
 }
 
+fn on_player_spawn(
+    trigger: On<Insert, PlayerSpawn>,
+    spawns: Query<&GlobalTransform>,
+    players: Query<(), With<PlayerController>>,
+    mut commands: Commands,
+) {
+    // Scene reloads re-insert the spawn; only replace a missing player.
+    if !players.is_empty() {
+        return;
+    }
+    let Ok(spawn) = spawns.get(trigger.entity) else {
+        return;
+    };
+    commands.trigger(SpawnPlayerRoot {
+        transform: spawn.compute_transform().with_scale(Vec3::ONE),
+    });
+}
+
 pub fn plugin(app: &mut App) {
-    app.add_observer(on_move).add_observer(spawn_player_root);
+    app.add_observer(on_move)
+        .add_observer(spawn_player_root)
+        .add_observer(on_player_spawn);
 }
 
 #[cfg(test)]
@@ -95,7 +117,7 @@ mod tests {
             app.finish();
             app.cleanup();
             let world = app.world_mut();
-            world.trigger(SpawnPlayerRoot);
+            world.trigger(SpawnPlayerRoot::default());
             world.flush();
             let player = world
                 .query_filtered::<Entity, With<PlayerController>>()
@@ -226,7 +248,7 @@ mod tests {
         app.finish();
         app.cleanup();
         let world = app.world_mut();
-        world.trigger(SpawnPlayerRoot);
+        world.trigger(SpawnPlayerRoot::default());
         world.flush();
         let player = world
             .query_filtered::<Entity, With<PlayerController>>()
@@ -256,6 +278,52 @@ mod tests {
         let height = world.get::<Position>(player).unwrap().y;
         assert!((height - resting_height).abs() < 0.1, "height: {height}");
         assert!(world.get::<LinearVelocity>(player).unwrap().y.abs() < 0.1);
+    }
+
+    #[test]
+    fn spawn_point_spawns_one_player_and_replaces_a_missing_one() {
+        let mut app = App::new();
+        app.add_plugins((MinimalPlugins, TransformPlugin))
+            .init_resource::<Assets<Mesh>>()
+            .add_message::<AssetEvent<Mesh>>()
+            .init_resource::<PlayerAssets>()
+            .init_resource::<PlayerSettings>()
+            .add_plugins((PhysicsPlugins::default(), super::plugin));
+        app.finish();
+        app.cleanup();
+        let world = app.world_mut();
+        let at = Transform::from_xyz(3., 1., -2.).with_rotation(Quat::from_rotation_y(1.));
+        // Jackdaw's loader sets `GlobalTransform` before user components go in.
+        let spawn = world
+            .spawn((at, GlobalTransform::from(at), PlayerSpawn))
+            .id();
+        world.flush();
+        let players = |world: &mut World| {
+            world
+                .query_filtered::<(Entity, &Transform), With<PlayerController>>()
+                .iter(world)
+                .map(|(entity, transform)| (entity, *transform))
+                .collect::<Vec<_>>()
+        };
+        let [(player, transform)] = players(world)[..] else {
+            panic!("expected one player");
+        };
+        let resting_height = world.resource::<PlayerSettings>().resting_height();
+        assert_eq!(
+            transform.translation,
+            at.translation + Vec3::Y * resting_height
+        );
+        assert_eq!(transform.rotation, at.rotation);
+
+        // A scene reload re-inserts the spawn.
+        world.entity_mut(spawn).insert(PlayerSpawn);
+        world.flush();
+        assert_eq!(players(world).len(), 1);
+
+        world.entity_mut(player).despawn();
+        world.entity_mut(spawn).insert(PlayerSpawn);
+        world.flush();
+        assert_eq!(players(world).len(), 1);
     }
 
     #[test]

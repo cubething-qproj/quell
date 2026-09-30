@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use jackdaw_runtime::EditorPreview;
 use std::f32::consts::FRAC_PI_4;
 
 #[derive(Resource, Reflect, Debug)]
@@ -47,8 +48,17 @@ impl PlayerSettings {
 #[derive(SystemSet, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerSystems;
 
-#[derive(Event, Reflect, Copy, Clone, Debug)]
-pub struct SpawnPlayerRoot;
+/// Spawns the player with its base resting at `transform`.
+#[derive(Event, Reflect, Copy, Clone, Debug, Default)]
+pub struct SpawnPlayerRoot {
+    pub transform: Transform,
+}
+
+/// Level-authored point where the player spawns, placed on the floor.
+#[derive(Component, Reflect, Default)]
+// Keep the preview in sync with `PlayerAssets::model`.
+#[reflect(Component, Default, @EditorPreview::gltf("models/basil.glb"))]
+pub struct PlayerSpawn;
 
 #[derive(Component, Reflect, Default)]
 #[reflect(Component, Default)]
@@ -68,6 +78,7 @@ pub struct PAMove;
 
 #[derive(AssetCollection, Resource, Default, Debug)]
 pub struct PlayerAssets {
+    // Keep `PlayerSpawn`'s editor preview in sync with this path.
     #[asset(path = "models/basil.glb#Scene0")]
     pub model: Handle<WorldAsset>,
 }

@@ -1,4 +1,5 @@
 use bevy::asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState};
+use jackdaw_runtime::JackdawSceneRoot;
 
 use crate::prelude::*;
 
@@ -40,9 +41,13 @@ fn load_world(
     }
 }
 
-fn init(mut commands: Commands) {
+fn init(mut commands: Commands, server: Res<AssetServer>) {
     debug!("in world: init");
-    commands.trigger(SpawnPlayerRoot);
+    // The level's `PlayerSpawn` spawns the player.
+    commands.spawn((
+        JackdawSceneRoot(server.load("scenes/scene.bsn")),
+        ScreenScoped,
+    ));
     commands.trigger(SpawnWorldgenRoot);
     commands.trigger(SpawnGlobalCtx);
     commands.trigger(SpawnCursorCapture);

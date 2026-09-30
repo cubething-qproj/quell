@@ -25,7 +25,7 @@ bevy_ecs::hierarchy::Children [
     #"Spawn Point"
     jackdaw_scene_types::node_id::SceneNodeId(763876343868756853)
     bevy_transform::components::transform::Transform
-    jackdaw_multiplayer::SpawnPoint
+    quell::service::player::data::PlayerSpawn
     bevy_camera::visibility::Visibility::Inherited
     ,
     #Brush
