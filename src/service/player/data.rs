@@ -62,13 +62,29 @@ pub struct PlayerSpawn;
 
 #[derive(Component, Reflect, Default)]
 #[reflect(Component, Default)]
-#[require(Name::new("Player Controller"))]
+#[require(
+    Name::new("Player Controller"),
+    PlayerMotor,
+    CollisionLayers = CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
+    ICtxDefault,
+    ContextActivity<ICtxDefault> = ContextActivity::ACTIVE,
+)]
+#[component(on_add = super::events::on_add_player_controller)]
 pub struct PlayerController {
     pub last_move: Option<Vec3>,
 }
 
-/// Default player input context
+/// The camera following a player; despawned with it.
 #[derive(Component)]
+#[relationship(relationship_target = PlayerCameras)]
+pub struct PlayerCameraOf(pub Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = PlayerCameraOf, linked_spawn)]
+pub struct PlayerCameras(Vec<Entity>);
+
+/// Default player input context
+#[derive(Component, Default)]
 pub struct ICtxDefault;
 
 /// PlayerAction_Move
