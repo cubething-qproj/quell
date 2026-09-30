@@ -24,7 +24,7 @@ play *args:
 dev *args:
     RUST_LOG=vn-june-26=debug,bevy=info,wgpu=off,wgpu_hal=off,naga=warn
     nix run --impure github:nix-community/nixGL#{{ NIXGL }} -- \
-        dx serve --hot-patch {{ args }}
+        dx serve --hot-patch --features dev {{ args }}
 
 # Lint with Clippy and bevy_lint.
 [working-directory('.')]

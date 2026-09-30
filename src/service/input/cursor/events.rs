@@ -1,6 +1,7 @@
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 
 use crate::prelude::*;
+#[cfg(feature = "dev")]
 use q_cam::free::FreeCameraInput;
 
 fn on_capture_cursor(
@@ -36,7 +37,7 @@ fn release_cursor<E: Event>(
     mut controls: Query<&mut ICtxCaptureCursor>,
     tracking: Query<(Entity, &ContextActivity<SpringArm>)>,
     mut commands: Commands,
-    mut free_cameras: Query<(&mut FreeCameraState, &mut FreeCameraInput)>,
+    #[cfg(feature = "dev")] mut free_cameras: Query<(&mut FreeCameraState, &mut FreeCameraInput)>,
 ) {
     cursor.visible = true;
     cursor.grab_mode = CursorGrabMode::None;
@@ -50,6 +51,7 @@ fn release_cursor<E: Event>(
                 .insert(ContextActivity::<SpringArm>::INACTIVE);
         }
     }
+    #[cfg(feature = "dev")]
     for (mut state, mut input) in &mut free_cameras {
         input.reset(&mut state);
     }

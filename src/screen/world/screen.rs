@@ -51,16 +51,19 @@ fn init(mut commands: Commands, server: Res<AssetServer>) {
     commands.trigger(SpawnWorldgenRoot);
     commands.trigger(SpawnGlobalCtx);
     commands.trigger(SpawnCursorCapture);
-    commands.spawn(flycam_bundle()).insert((
-        Camera {
-            order: CameraOrder::World as isize,
-            is_active: false,
-            ..default()
-        },
-        ScreenScoped,
-        Name::new("Free Camera"),
-    ));
-    commands.spawn(CameraTestInput::bundle());
+    #[cfg(feature = "dev")]
+    {
+        commands.spawn(flycam_bundle()).insert((
+            Camera {
+                order: CameraOrder::World as isize,
+                is_active: false,
+                ..default()
+            },
+            ScreenScoped,
+            Name::new("Free Camera"),
+        ));
+        commands.spawn(CameraTestInput::bundle());
+    }
 }
 
 pub fn plugin(app: &mut App) {

@@ -1,6 +1,8 @@
 use crate::prelude::*;
 
-/// Allows for configuration of the application, set from command line arguments.
+/// Allows for configuration of the application. When the "dev" feature is set,
+/// this should be handled via command line arguments. Otherwise, it is kept as the
+/// default value.
 #[derive(Resource, Clone, Debug, Default, Reflect)]
 pub struct AppSettings {
     /// Registered screen name to start on. `None` starts on [`SplashScreen`].
