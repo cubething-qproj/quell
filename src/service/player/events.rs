@@ -1,52 +1,56 @@
+use bevy::ecs::{lifecycle::HookContext, world::DeferredWorld};
 use bevy::window::PrimaryWindow;
 
 use crate::prelude::*;
 
-// TODO: Split this out into a bundle
 fn spawn_player_root(
     trigger: On<SpawnPlayerRoot>,
     mut commands: Commands,
-    player_assets: Res<PlayerAssets>,
     settings: Res<PlayerSettings>,
 ) {
-    let player_entt = commands
-        .spawn((
-            PlayerController::default(),
-            ScreenScoped,
-            WorldAssetRoot(player_assets.model.clone()),
-            (
-                PlayerMotor::default(),
-                // Spawn resting on the ground: move-and-slide can't resolve deep
-                // initial penetration.
-                trigger.transform.with_translation(
-                    trigger.transform.translation + Vec3::Y * settings.resting_height(),
-                ),
-                Collider::capsule(settings.capsule_radius, settings.capsule_height),
-                CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
-            ),
-            (
-                ICtxDefault,
-                ContextActivity::<ICtxDefault>::ACTIVE,
-                actions!(
-                    ICtxDefault[(
-                        Action::<PAMove>::new(),
-                        DeadZone::default(),
-                        SmoothNudge::default(),
-                        Negate::y(),
-                        SwizzleAxis::XZY,
-                        Bindings::spawn((Cardinal::wasd_keys(), Axial::left_stick())),
-                    )]
-                ),
-            ),
-        ))
-        .id();
+    commands.spawn((
+        PlayerController::default(),
+        ScreenScoped,
+        // Spawn resting on the ground: move-and-slide can't resolve deep
+        // initial penetration.
+        trigger
+            .transform
+            .with_translation(trigger.transform.translation + Vec3::Y * settings.resting_height()),
+    ));
+}
 
+/// Adds the parts of a [`PlayerController`] that need resources or other entities.
+pub(super) fn on_add_player_controller(mut world: DeferredWorld, ctx: HookContext) {
+    let (Some(assets), Some(settings)) = (
+        world.get_resource::<PlayerAssets>(),
+        world.get_resource::<PlayerSettings>(),
+    ) else {
+        warn!("PlayerController added without PlayerAssets and PlayerSettings; skipping setup");
+        return;
+    };
+    let model = assets.model.clone();
+    let collider = Collider::capsule(settings.capsule_radius, settings.capsule_height);
+    let mut commands = world.commands();
+    commands.entity(ctx.entity).insert((
+        WorldAssetRoot(model),
+        collider,
+        actions!(
+            ICtxDefault[(
+                Action::<PAMove>::new(),
+                DeadZone::default(),
+                SmoothNudge::default(),
+                Negate::y(),
+                SwizzleAxis::XZY,
+                Bindings::spawn((Cardinal::wasd_keys(), Axial::left_stick())),
+            )]
+        ),
+    ));
     commands.spawn((
         Name::new("PlayerCam"),
-        ScreenScoped,
+        PlayerCameraOf(ctx.entity),
         (LockedAxes::new().lock_rotation_z(),),
         (PointLight::default()),
-        tracking_cam_bundle(player_entt),
+        tracking_cam_bundle(ctx.entity),
     ));
 }
 
@@ -324,6 +328,11 @@ mod tests {
         world.entity_mut(spawn).insert(PlayerSpawn);
         world.flush();
         assert_eq!(players(world).len(), 1);
+        let cameras = world
+            .query_filtered::<(), With<SpringArm>>()
+            .iter(world)
+            .count();
+        assert_eq!(cameras, 1, "the old camera despawns with its player");
     }
 
     #[test]
