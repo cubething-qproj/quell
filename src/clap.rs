@@ -16,6 +16,11 @@ struct Cli {
     /// Show build info
     #[arg(long)]
     build_info: bool,
+
+    /// Passed by the Jackdaw editor when extracting the type schema; handled
+    /// by `jackdaw_runtime`, so only accept it here.
+    #[arg(long = "jackdaw-extract-schema", hide = true)]
+    _jackdaw_extract_schema: bool,
 }
 
 pub fn parse_args() -> AppSettings {

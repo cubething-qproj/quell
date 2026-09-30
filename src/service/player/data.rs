@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use jackdaw_runtime::EditorPreview;
 use std::f32::consts::FRAC_PI_4;
 
 #[derive(Resource, Reflect, Debug)]
@@ -47,17 +48,43 @@ impl PlayerSettings {
 #[derive(SystemSet, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerSystems;
 
-#[derive(Event, Reflect, Copy, Clone, Debug)]
-pub struct SpawnPlayerRoot;
+/// Spawns the player with its base resting at `transform`.
+#[derive(Event, Reflect, Copy, Clone, Debug, Default)]
+pub struct SpawnPlayerRoot {
+    pub transform: Transform,
+}
 
-#[derive(Component, Default)]
-#[require(Name::new("Player Controller"))]
+/// Level-authored point where the player spawns, placed on the floor.
+#[derive(Component, Reflect, Default)]
+// Keep the preview in sync with `PlayerAssets::model`.
+#[reflect(Component, Default, @EditorPreview::gltf("models/basil.glb"))]
+pub struct PlayerSpawn;
+
+#[derive(Component, Reflect, Default)]
+#[reflect(Component, Default)]
+#[require(
+    Name::new("Player Controller"),
+    PlayerMotor,
+    CollisionLayers = CollisionLayers::new(CollisionLayer::Player, LayerMask::ALL),
+    ICtxDefault,
+    ContextActivity<ICtxDefault> = ContextActivity::ACTIVE,
+)]
+#[component(on_add = super::events::on_add_player_controller)]
 pub struct PlayerController {
     pub last_move: Option<Vec3>,
 }
 
-/// Default player input context
+/// The camera following a player; despawned with it.
 #[derive(Component)]
+#[relationship(relationship_target = PlayerCameras)]
+pub struct PlayerCameraOf(pub Entity);
+
+#[derive(Component)]
+#[relationship_target(relationship = PlayerCameraOf, linked_spawn)]
+pub struct PlayerCameras(Vec<Entity>);
+
+/// Default player input context
+#[derive(Component, Default)]
 pub struct ICtxDefault;
 
 /// PlayerAction_Move
@@ -67,12 +94,14 @@ pub struct PAMove;
 
 #[derive(AssetCollection, Resource, Default, Debug)]
 pub struct PlayerAssets {
+    // Keep `PlayerSpawn`'s editor preview in sync with this path.
     #[asset(path = "models/basil.glb#Scene0")]
     pub model: Handle<WorldAsset>,
 }
 
 /// Movement intent consumed by the fixed-step player controller.
-#[derive(Component, Default)]
+#[derive(Component, Reflect, Default)]
+#[reflect(Component, Default)]
 #[require(
     RigidBody::Kinematic,
     // Only move-and-slide moves the body.

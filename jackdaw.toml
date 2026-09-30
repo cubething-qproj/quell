@@ -1,0 +1,8 @@
+# jackdaw project settings.
+
+# The game plugin type inside your lib crate.
+plugin = "AppPlugin"
+package = "quell"
+
+[[run]]
+name = "Play"
