@@ -45,10 +45,10 @@ fn init(mut commands: Commands, server: Res<AssetServer>) {
     debug!("in world: init");
     // The level's `PlayerSpawn` spawns the player.
     commands.spawn((
-        JackdawSceneRoot(server.load("scenes/scene.bsn")),
+        JackdawSceneRoot(server.load("scenes/greybox_scene.bsn")),
         ScreenScoped,
     ));
-    commands.trigger(SpawnWorldgenRoot);
+    // commands.trigger(SpawnWorldgenRoot);
     commands.trigger(SpawnGlobalCtx);
     commands.trigger(SpawnCursorCapture);
     #[cfg(feature = "dev")]

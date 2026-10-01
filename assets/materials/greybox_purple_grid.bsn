@@ -1,0 +1,6 @@
+// jackdaw 0.19.0 | bevy 0.19
+// jackdaw asset bevy_pbr::pbr_material::StandardMaterial
+#greybox_purple_grid
+bevy_pbr::pbr_material::StandardMaterial {
+    base_color_texture: "textures/GreyboxTextures/greybox_purple_grid.png",
+}
