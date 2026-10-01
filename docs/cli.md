@@ -30,8 +30,8 @@ The following tasks are available:
 
 - `test` - Runs [nextest](https://nexte.st) for the specified package. Arguments are passed directly to nextest.
 - `ci` - Runs [act](https://github.com/nektos/act) for the repository, emulating CI tests. Passed arguments are sent straight to act.
-- `check` - Runs Clippy and bevy_lint
-- `fix` - Runs Clippy and bevy_lint with the `--fix` flag enabled.
+- `check` - Runs Clippy
+- `fix` - Runs Clippy with the `--fix` flag enabled.
 - `check:deps` - Runs [cargo-deny](https://github.com/EmbarkStudios/cargo-deny)
 
 ## Templating scripts

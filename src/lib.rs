@@ -1,7 +1,3 @@
-#![feature(register_tool)]
-#![register_tool(bevy)]
-#![allow(bevy::panicking_methods)]
-
 //! # tfw-app template
 //!
 //! This crate is split into three modules: the [screen] module for the creation
