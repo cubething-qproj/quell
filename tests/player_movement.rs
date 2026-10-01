@@ -1,7 +1,3 @@
-#![feature(register_tool)]
-#![register_tool(bevy)]
-#![allow(bevy::panicking_methods)]
-
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use bevy::time::TimeUpdateStrategy;
