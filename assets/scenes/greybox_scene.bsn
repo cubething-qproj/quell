@@ -34,6 +34,7 @@ bevy_ecs::hierarchy::Children [
     jackdaw_scene_types::node_id::SceneNodeId(6180166860716766419)
     bevy_transform::components::transform::Transform
     bevy_camera::visibility::Visibility::Inherited
+    jackdaw_scene_types::Locked
     bevy_ecs::hierarchy::Children [
         #"Floor West"
         jackdaw_scene_types::node_id::SceneNodeId(6180166860716766420)
@@ -1480,6 +1481,7 @@ bevy_ecs::hierarchy::Children [
     jackdaw_scene_types::node_id::SceneNodeId(6180166860716766423)
     bevy_transform::components::transform::Transform
     bevy_camera::visibility::Visibility::Inherited
+    jackdaw_scene_types::Locked
     bevy_ecs::hierarchy::Children [
         #"Ramp Platform"
         jackdaw_scene_types::node_id::SceneNodeId(6180166860716766424)
@@ -5086,6 +5088,7 @@ bevy_ecs::hierarchy::Children [
     jackdaw_scene_types::node_id::SceneNodeId(6180166860716766433)
     bevy_transform::components::transform::Transform
     bevy_camera::visibility::Visibility::Inherited
+    jackdaw_scene_types::Locked
     bevy_ecs::hierarchy::Children [
         #"Step 0.05m"
         jackdaw_scene_types::node_id::SceneNodeId(6180166860716766434)
@@ -7972,6 +7975,7 @@ bevy_ecs::hierarchy::Children [
     jackdaw_scene_types::node_id::SceneNodeId(6180166860716766440)
     bevy_transform::components::transform::Transform
     bevy_camera::visibility::Visibility::Inherited
+    jackdaw_scene_types::Locked
     bevy_ecs::hierarchy::Children [
         #"Drop 0.1m Ramp"
         jackdaw_scene_types::node_id::SceneNodeId(6180166860716766441)
@@ -11458,6 +11462,7 @@ bevy_ecs::hierarchy::Children [
     jackdaw_scene_types::node_id::SceneNodeId(6180166860716766449)
     bevy_transform::components::transform::Transform
     bevy_camera::visibility::Visibility::Inherited
+    jackdaw_scene_types::Locked
     bevy_ecs::hierarchy::Children [
         #"Wall Straight"
         jackdaw_scene_types::node_id::SceneNodeId(6180166860716766450)
