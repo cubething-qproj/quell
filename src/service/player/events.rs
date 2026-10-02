@@ -38,7 +38,14 @@ pub(super) fn on_add_player_controller(mut world: DeferredWorld, ctx: HookContex
             ICtxDefault[(
                 Action::<PAMove>::new(),
                 DeadZone::default(),
-                SmoothNudge::default(),
+                SmoothNudge::new(16.),
+                Negate::y(),
+                SwizzleAxis::XZY,
+                Bindings::spawn((Cardinal::wasd_keys(), Axial::left_stick())),
+            ),
+            (
+                Action::<PARawMoveInput>::new(),
+                DeadZone::default(),
                 Negate::y(),
                 SwizzleAxis::XZY,
                 Bindings::spawn((Cardinal::wasd_keys(), Axial::left_stick())),
@@ -64,6 +71,15 @@ fn on_move(
     controller.last_move =
         (camera.is_active && window.focused).then_some(trigger.value * settings.default_speed);
 }
+fn on_input(_trigger: On<Fire<PARawMoveInput>>, mut controller: Single<&mut PlayerController>) {
+    controller.rotation_locked = false;
+}
+fn on_input_complete(
+    _trigger: On<Complete<PARawMoveInput>>,
+    mut controller: Single<&mut PlayerController>,
+) {
+    controller.rotation_locked = true;
+}
 
 fn on_player_spawn(
     trigger: On<Insert, PlayerSpawn>,
@@ -85,6 +101,8 @@ fn on_player_spawn(
 
 pub fn plugin(app: &mut App) {
     app.add_observer(on_move)
+        .add_observer(on_input)
+        .add_observer(on_input_complete)
         .add_observer(spawn_player_root)
         .add_observer(on_player_spawn);
 }
