@@ -3,7 +3,6 @@
 # -------------------------------- 𝒒𝒑𝒓𝒐𝒋 --
 
 qproj := "qproj-scripts"
-NIXGL := env("NIXGL", "nixVulkanNvidia")
 
 _default:
     just --list
@@ -16,15 +15,13 @@ build *args:
 # Run the application.
 [working-directory('.')]
 play *args:
-    nix run --impure github:nix-community/nixGL#{{ NIXGL }} -- \
-        {{ qproj }} play {{ args }}
+    {{ qproj }} play {{ args }}
 
 # Run with dynamic linking + hot-patched systems (Dioxus CLI).
 [working-directory('.')]
 dev *args:
     RUST_LOG=vn-june-26=debug,bevy=info,wgpu=off,wgpu_hal=off,naga=warn
-    nix run --impure github:nix-community/nixGL#{{ NIXGL }} -- \
-        dx serve --hot-patch --features dev {{ args }}
+    dx serve --hot-patch --features dev {{ args }}
 
 # Lint with Clippy.
 [working-directory('.')]
