@@ -6,10 +6,10 @@ use bevy_inspector_egui::{
 use crate::prelude::*;
 
 // mod console;
-mod gizmos;
+// mod gizmos;
 
 pub mod prelude {
-    pub use super::gizmos::prelude::*;
+    // pub use super::gizmos::prelude::*;
 }
 
 pub fn plugin(app: &mut App) {

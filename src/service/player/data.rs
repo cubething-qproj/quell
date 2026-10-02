@@ -72,6 +72,8 @@ pub struct PlayerSpawn;
 #[component(on_add = super::events::on_add_player_controller)]
 pub struct PlayerController {
     pub last_move: Option<Vec3>,
+    /// Lock y-rotation to prevent player rotation once input has stopped
+    pub rotation_locked: bool,
 }
 
 /// The camera following a player; despawned with it.
@@ -91,6 +93,12 @@ pub struct ICtxDefault;
 #[derive(InputAction, Reflect)]
 #[action_output(Vec3)]
 pub struct PAMove;
+
+/// PlayerAction_RawMoveInput
+/// Used WITHOUT SMOOTHING to determine exactly when keys are pressed and released.
+#[derive(InputAction, Reflect)]
+#[action_output(Vec3)]
+pub struct PARawMoveInput;
 
 #[derive(AssetCollection, Resource, Default, Debug)]
 pub struct PlayerAssets {
@@ -115,4 +123,23 @@ pub struct PlayerMotor {
     pub desired_velocity: Vec3,
     /// Facing to turn toward; `None` keeps the current facing.
     pub desired_forward: Option<Dir3>,
+}
+impl PlayerMotor {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    /// Sets desired_velocity, builder-style
+    pub fn with_vel(self, desired_velocity: Vec3) -> Self {
+        Self {
+            desired_velocity,
+            ..self
+        }
+    }
+    /// Sets desired_forward, builder-style
+    pub fn with_forward(self, desired_forward: Option<Dir3>) -> Self {
+        Self {
+            desired_forward,
+            ..self
+        }
+    }
 }

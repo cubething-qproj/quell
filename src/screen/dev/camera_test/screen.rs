@@ -385,10 +385,9 @@ mod tests {
         f.left_click();
         f.assert_capture(true);
 
-        let motor = PlayerMotor {
-            desired_velocity: Vec3::X,
-            desired_forward: Some(Dir3::X),
-        };
+        let motor = PlayerMotor::default()
+            .with_vel(Vec3::X)
+            .with_forward(Some(Dir3::X));
         let player = f
             .app
             .world_mut()
@@ -397,6 +396,7 @@ mod tests {
                 ContextActivity::<ICtxDefault>::ACTIVE,
                 PlayerController {
                     last_move: Some(Vec3::X),
+                    rotation_locked: false,
                 },
                 motor,
             ))

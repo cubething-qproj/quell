@@ -20,7 +20,7 @@ fn update_controller(
     let moved = controller.last_move.is_some();
     let last_move = controller.last_move.take().unwrap_or_default();
     let desired_velocity = yaw_quat * last_move;
-    let desired_forward = moved
+    let desired_forward = (moved && !controller.rotation_locked)
         .then_some(Dir3::new(-desired_velocity.normalize()).ok())
         .flatten();
 
