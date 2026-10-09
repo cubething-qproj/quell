@@ -28,7 +28,7 @@ q_cam = { git = "https://github.com/cubething-qproj/q_cam", version = "^0.1.0" }
 
 # dev
 clap = { optional = true, version = "4.5.54", features = ["derive"] }
-q_term = { optional = true, git = "https://github.com/cubething-qproj/q_term", version = "^0.1.0" }
+q_shell = { optional = true, git = "https://github.com/cubething-qproj/q_shell", version = "^0.1.0" }
 bevy-inspector-egui = { optional = true, version = "0.37.0" }
 
 [dev-dependencies]
@@ -42,7 +42,7 @@ built = { optional = true, version = "0.8.0", features = ["chrono"] }
 default = ["dev", "dylib", "jackdaw"]
 dev = [
     "dep:clap",
-    "dep:q_term",
+    "dep:q_shell",
     "dep:bevy-inspector-egui",
     "dep:built",
     "q_cam/free_camera",

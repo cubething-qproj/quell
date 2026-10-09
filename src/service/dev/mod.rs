@@ -5,7 +5,7 @@ use bevy_inspector_egui::{
 
 use crate::prelude::*;
 
-// mod console;
+mod console;
 // mod gizmos;
 
 pub mod prelude {
@@ -13,7 +13,8 @@ pub mod prelude {
 }
 
 pub fn plugin(app: &mut App) {
-    // app.add_plugins((gizmos::plugin, console::plugin));
+    // app.add_plugins(gizmos::plugin);
+    app.add_plugins(console::plugin);
     // Egui clears mouse/keyboard input it's using, so clicks and typing in the
     // inspector don't reach gameplay (e.g. cursor capture). Enhanced input must
     // read after that.
