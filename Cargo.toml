@@ -22,6 +22,8 @@ jackdaw_runtime = { git = "https://github.com/ada-x64/jackdaw", branch="main", f
 # not bevy
 tiny_bail = "0.7"
 bitflags = "2.9.3"
+hexx = "0.25"
+rand = "0.10"
 
 q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^0.2.0", features = ["bevy_picking", "bevy_gilrs"] }
 q_cam = { git = "https://github.com/cubething-qproj/q_cam", version = "^0.1.0" }

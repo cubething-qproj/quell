@@ -1,5 +1,6 @@
 mod camera_test;
 mod greybox_arena;
+mod hex_paths;
 use crate::prelude::*;
 
 pub mod prelude {
