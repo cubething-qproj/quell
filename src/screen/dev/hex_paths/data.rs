@@ -1,8 +1,81 @@
+use super::generate::{BoardGenError, BoardLayout};
 use crate::prelude::*;
-use hexx::{EdgeDirection, Hex, HexOrientation, OffsetHexMode};
+use bevy::platform::collections::HashMap;
+use hexx::{EdgeDirection, Hex, HexLayout, HexOrientation, OffsetHexMode};
 use rand::{Rng, RngExt};
 
 const OFFSET_MODE: OffsetHexMode = OffsetHexMode::Even;
+
+/// Position of a tile or the player in the hex grid.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HexPos(pub Hex);
+
+/// A tile whose paths and node trait have been revealed.
+#[derive(Component)]
+pub struct Revealed;
+
+/// Player token for the hex prototype.
+#[derive(Component)]
+pub struct HexPathsPlayer;
+
+/// Root of the entities replaced when the board regenerates.
+#[derive(Component)]
+pub struct BoardRoot;
+
+/// Camera rendering only the hex board.
+#[derive(Component)]
+pub struct HexPathsCamera;
+
+/// UI camera state restored when the board stops compositing beneath it.
+#[derive(Resource)]
+pub struct UiCameraState {
+    pub entity: Entity,
+    pub clear_color: ClearColorConfig,
+}
+
+/// Separate gizmo layer for the hex camera.
+#[derive(Default, GizmoConfigGroup, Reflect)]
+pub struct HexPathsGizmos;
+
+/// Text displaying the generated seed, distribution, and errors.
+#[derive(Component, Default, Clone)]
+pub struct StatsText;
+
+/// Text identifying the current spawn placement.
+#[derive(Component, Default, Clone)]
+pub struct SpawnText;
+
+/// Text input for a full-width unsigned seed; blank means random.
+#[derive(Component, Default, Clone)]
+pub struct SeedInput;
+
+/// Root node of the scrollable settings panel.
+#[derive(Component, Default, Clone)]
+pub struct SettingsPanel;
+
+/// Error in the seed text being edited.
+#[derive(Resource, Default)]
+pub struct PanelState {
+    pub seed_error: Option<&'static str>,
+}
+
+/// Typed binding between a number input and a generation setting.
+#[derive(Component, Clone, Copy)]
+pub struct NumberSetting<T: Send + Sync + 'static> {
+    pub read: fn(&HexPathsSettings) -> T,
+    pub write: fn(&mut HexPathsSettings, T),
+}
+
+/// The play-time visibility option controlled by a checkbox.
+#[derive(Component, Clone, Copy)]
+pub enum ViewToggle {
+    Paths,
+    NodeTraits,
+}
+
+/// Slider controlling the duration of a walking step.
+#[derive(Component, Default, Clone)]
+pub struct StepDuration;
 
 /// What occupies a tile.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Reflect)]
@@ -82,6 +155,169 @@ impl PathShape {
             2 | 4 => Some(Self::Sharp),
             _ => None,
         }
+    }
+}
+
+/// Visibility and walking settings. Editing these never regenerates a board.
+#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
+#[reflect(Resource)]
+pub struct HexPathsView {
+    pub show_paths: bool,
+    pub show_node_traits: bool,
+    pub step_duration: f32,
+}
+
+impl Default for HexPathsView {
+    fn default() -> Self {
+        Self {
+            show_paths: false,
+            show_node_traits: false,
+            step_duration: 0.5,
+        }
+    }
+}
+
+/// Sizes and colors for the board preview and its debug panel.
+#[derive(Resource, Debug, Clone, Reflect)]
+#[reflect(Resource)]
+pub struct HexPathsAppearance {
+    pub panel_width: f32,
+    pub board_padding: f32,
+    pub marker_radius: f32,
+    pub dead_end_size: f32,
+    pub grid: Color,
+    pub paths: Color,
+    pub spawn: Color,
+    pub player: Color,
+    pub hidden_node: Color,
+    pub key_location: Color,
+    pub npc: Color,
+    pub fear: Color,
+    pub empty: Color,
+}
+
+impl Default for HexPathsAppearance {
+    fn default() -> Self {
+        Self {
+            panel_width: 340.,
+            board_padding: 1.,
+            marker_radius: 0.22,
+            dead_end_size: 0.055,
+            grid: Color::srgb(0.25, 0.28, 0.32),
+            paths: Color::srgb(0.75, 0.8, 0.85),
+            spawn: Color::srgb(0.3, 0.9, 0.5),
+            player: Color::WHITE,
+            hidden_node: Color::srgb(0.6, 0.6, 0.6),
+            key_location: Color::srgb(1., 0.8, 0.2),
+            npc: Color::srgb(0.3, 0.65, 1.),
+            fear: Color::srgb(0.95, 0.3, 0.4),
+            empty: Color::srgb(0.65, 0.45, 0.8),
+        }
+    }
+}
+
+impl HexPathsAppearance {
+    /// Color identifying a revealed node's trait.
+    pub fn node_color(&self, card: NodeTrait) -> Color {
+        match card {
+            NodeTrait::KeyLocation => self.key_location,
+            NodeTrait::Npc => self.npc,
+            NodeTrait::Fear => self.fear,
+            NodeTrait::Empty => self.empty,
+        }
+    }
+}
+
+/// Play-time tile index and geometry, with the bounds of the generated grid.
+#[derive(Resource)]
+pub struct Board {
+    pub tiles: HashMap<Hex, Entity>,
+    pub layout: HexLayout,
+    pub size: Vec2,
+    pub columns: u32,
+    pub rows: u32,
+}
+
+impl Board {
+    /// Centers the grid in world space, keeping its full hex outlines in view.
+    pub fn new(settings: &HexPathsSettings) -> Self {
+        let mut layout = HexLayout::flat();
+        let (min, max) = settings
+            .cells()
+            .flat_map(|hex| layout.hex_corners(hex))
+            .fold(
+                (Vec2::splat(f32::INFINITY), Vec2::splat(f32::NEG_INFINITY)),
+                |(min, max), point| (min.min(point), max.max(point)),
+            );
+        layout.origin = -(min + max) / 2.;
+        Self {
+            tiles: HashMap::default(),
+            layout,
+            size: max - min,
+            columns: settings.columns,
+            rows: settings.rows,
+        }
+    }
+
+    /// Cells inside the generated grid, independent of current settings edits.
+    pub fn cells(&self) -> impl Iterator<Item = Hex> + '_ {
+        (0..self.columns).flat_map(move |column| {
+            (0..self.rows).map(move |row| {
+                Hex::from_offset_coordinates(
+                    [column as i32, row as i32],
+                    OFFSET_MODE,
+                    HexOrientation::Flat,
+                )
+            })
+        })
+    }
+}
+
+/// Seed and measured distribution from the latest generation attempt.
+#[derive(Resource, Default)]
+pub struct BoardStats {
+    pub seed: u64,
+    pub attempts: u32,
+    pub two_spoke: u32,
+    pub three_spoke: u32,
+    /// Sharp, wide, and straight two-spoke path counts.
+    pub shapes: [u32; 3],
+    pub error: Option<BoardGenError>,
+}
+
+impl BoardStats {
+    /// Measures the generated path tiles without counting nodes or spawn.
+    pub fn from_layout(seed: u64, layout: &BoardLayout) -> Self {
+        let mut stats = Self {
+            seed,
+            attempts: layout.attempts,
+            ..default()
+        };
+        for tile in layout
+            .tiles
+            .values()
+            .filter(|tile| tile.kind == TileKind::Path)
+        {
+            match tile.spokes.count() {
+                2 => {
+                    stats.two_spoke += 1;
+                    let mut directions = EdgeDirection::ALL_DIRECTIONS
+                        .into_iter()
+                        .filter(|&dir| tile.spokes.has(dir));
+                    let shape =
+                        PathShape::of_turn(-directions.next().unwrap(), directions.next().unwrap())
+                            .expect("distinct spokes have a path shape");
+                    stats.shapes[match shape {
+                        PathShape::Sharp => 0,
+                        PathShape::Wide => 1,
+                        PathShape::Straight => 2,
+                    }] += 1;
+                }
+                3 => stats.three_spoke += 1,
+                _ => {}
+            }
+        }
+        stats
     }
 }
 

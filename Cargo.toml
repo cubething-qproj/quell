@@ -48,6 +48,7 @@ dev = [
     "dep:bevy-inspector-egui",
     "dep:built",
     "q_cam/free_camera",
+    "bevy/bevy_feathers",
 ]
 dylib = ["bevy/dynamic_linking"]
 jackdaw = ["jackdaw_runtime/pie"]
