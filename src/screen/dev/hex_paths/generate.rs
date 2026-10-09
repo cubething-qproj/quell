@@ -225,17 +225,22 @@ impl<'a, R: Rng> Generator<'a, R> {
         }
     }
 
-    /// Upgrades some 2-spoke path tiles to junctions, each growing a branch.
+    /// Upgrades existing 2-spoke path tiles to junctions, each growing a branch.
+    /// New branch tiles cannot themselves grow branches during this pass.
     fn decorate(&mut self) {
         let s = self.settings;
-        for hex in s.cells() {
-            let Some(&tile) = self.tiles.get(&hex) else {
-                continue;
-            };
-            if tile.kind != TileKind::Path
-                || tile.spokes.count() != 2
-                || !self.rng.random_bool(s.junction_chance as f64)
-            {
+        let candidates: Vec<_> = s
+            .cells()
+            .filter(|hex| {
+                self.tiles
+                    .get(hex)
+                    .is_some_and(|tile| tile.kind == TileKind::Path && tile.spokes.count() == 2)
+            })
+            .collect();
+        for hex in candidates {
+            let tile = self.tiles[&hex];
+            // An earlier branch may already have joined this candidate.
+            if tile.spokes.count() != 2 || !self.rng.random_bool(s.junction_chance as f64) {
                 continue;
             }
             let open: Vec<_> = EdgeDirection::ALL_DIRECTIONS
@@ -504,6 +509,54 @@ mod tests {
                 "seed {seed}"
             );
         }
+    }
+
+    #[test]
+    fn decoration_does_not_branch_from_new_path_tiles() {
+        // Open space lets a new tile sprout through an unused edge later in
+        // the grid scan. Only the original tile should get a junction roll.
+        let settings = HexPathsSettings {
+            columns: 3,
+            rows: 8,
+            junction_chance: 1.,
+            min_branch_length: 1,
+            max_branch_length: 1,
+            branch_join_chance: 0.,
+            shape_weights: ShapeWeights {
+                sharp: 0.,
+                wide: 0.,
+                straight: 1.,
+            },
+            ..default()
+        };
+        let mut rng = StdRng::seed_from_u64(7);
+        let mut generator = Generator::new(&settings, &mut rng);
+        let origin = settings.cell(0, 0);
+        let mut tile = LayoutTile::from(TileKind::Path);
+        for dir in EdgeDirection::ALL_DIRECTIONS
+            .into_iter()
+            .filter(|&dir| !settings.contains(origin.neighbor(dir)))
+            .take(2)
+        {
+            tile.spokes.insert(dir);
+        }
+        generator.tiles.insert(origin, tile);
+
+        generator.decorate();
+
+        assert_eq!(generator.tiles[&origin].spokes.count(), 3);
+        let paths: Vec<_> = generator
+            .tiles
+            .iter()
+            .filter(|(_, tile)| tile.kind == TileKind::Path)
+            .collect();
+        assert_eq!(paths.len(), 2, "one original tile and one branch tile");
+        assert!(
+            paths
+                .iter()
+                .filter(|(hex, _)| **hex != origin)
+                .all(|(_, tile)| tile.spokes.count() == 2)
+        );
     }
 
     #[test]
