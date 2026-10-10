@@ -111,6 +111,17 @@ pub enum NodeTrait {
     Empty,
 }
 
+/// How the path network is generated.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Reflect)]
+pub enum GeneratorKind {
+    /// Noisy A* routes join the nodes; branches then spend the remaining
+    /// path budget.
+    #[default]
+    Backbone,
+    /// A tree grows tile by tile from spawn; nodes then claim its dead ends.
+    GrowingTree,
+}
+
 /// Where the spawn tile goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
 pub enum SpawnPlacement {
@@ -141,6 +152,18 @@ impl Spokes {
     /// Number of spokes.
     pub fn count(self) -> u32 {
         self.0.count_ones()
+    }
+
+    /// Removes the spoke on the edge in `dir`.
+    pub fn remove(&mut self, dir: EdgeDirection) {
+        self.0 &= !(1 << dir.index());
+    }
+
+    /// Directions that have a spoke.
+    pub fn directions(self) -> impl Iterator<Item = EdgeDirection> {
+        EdgeDirection::ALL_DIRECTIONS
+            .into_iter()
+            .filter(move |&dir| self.has(dir))
     }
 
     /// Moving from a tile with these spokes to its neighbor in `dir` is legal
@@ -444,6 +467,7 @@ pub struct HexPathsSettings {
     /// `None` draws a fresh seed every generation.
     pub seed: Option<u64>,
     pub spawn: SpawnPlacement,
+    pub generator: GeneratorKind,
     pub deck: Deck,
     pub min_node_distance: u32,
     pub min_spawn_distance: u32,
@@ -471,6 +495,13 @@ pub struct HexPathsSettings {
     pub min_loop: u32,
     /// Every node sits on a loop: it has two separate ways out.
     pub node_loops: bool,
+    /// Growing tree only: chance to extend the newest dead end rather than a
+    /// random one. 1 gives long winding corridors; 0 gives bushy networks.
+    pub newest_bias: f32,
+    /// Growing tree with node loops: share of the target grown as a tree
+    /// before node loops and branches add the rest. Too little leaves no room
+    /// to space the nodes; too much overshoots the window.
+    pub loop_growth: f32,
 }
 
 impl Default for HexPathsSettings {
@@ -480,6 +511,7 @@ impl Default for HexPathsSettings {
             rows: 8,
             seed: None,
             spawn: SpawnPlacement::Center,
+            generator: GeneratorKind::Backbone,
             deck: Deck {
                 key_locations: 1,
                 npcs: 1,
@@ -505,6 +537,8 @@ impl Default for HexPathsSettings {
             no_dead_ends: true,
             min_loop: 8,
             node_loops: true,
+            newest_bias: 0.5,
+            loop_growth: 0.8,
         }
     }
 }
@@ -583,7 +617,10 @@ impl HexPathsSettings {
                 "shape weights must be within 0..=10 with at least one positive",
             ),
             (
-                chance.contains(&self.junction_chance) && chance.contains(&self.branch_join_chance),
+                chance.contains(&self.junction_chance)
+                    && chance.contains(&self.branch_join_chance)
+                    && chance.contains(&self.newest_bias)
+                    && chance.contains(&self.loop_growth),
                 "chances must be within 0..=1",
             ),
             (

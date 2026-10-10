@@ -54,6 +54,12 @@ pub(super) fn scene(width: f32) -> impl Scene {
                         view.sight_radius = change.value.round() as u32;
                     })),
                 label("Generation"),
+                (Node { column_gap: px(4) } Children [
+                    (@FeathersButton { @caption: bsn! { label("Backbone") } }
+                        on(|_: On<Activate>, mut s: ResMut<HexPathsSettings>| { s.generator = GeneratorKind::Backbone; })),
+                    (@FeathersButton { @caption: bsn! { label("Growing tree") } }
+                        on(|_: On<Activate>, mut s: ResMut<HexPathsSettings>| { s.generator = GeneratorKind::GrowingTree; })),
+                ]),
                 label_small("Seed (blank = random)"),
                 (@FeathersTextInputContainer Children [(
                     @FeathersTextInput { @max_characters: 20usize }
@@ -110,6 +116,8 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 flag("No dead ends", |s| s.no_dead_ends, |s, v| s.no_dead_ends = v),
                 flag("Every node on a loop", |s| s.node_loops, |s, v| s.node_loops = v),
                 integer("Minimum loop length", |s| s.min_loop, |s, v| s.min_loop = v),
+                decimal("Growing tree newest bias (0–1)", |s| s.newest_bias, |s, v| s.newest_bias = v),
+                decimal("Growing tree share grown before loops (0–1)", |s| s.loop_growth, |s, v| s.loop_growth = v),
             ]
         )]
     }
@@ -361,7 +369,8 @@ pub(super) fn update_stats(
     };
     let window = settings.target_window();
     let mut value = format!(
-        "Seed: {}\nAttempts: {}\nPath tiles: {} (target {}–{})\n2 spokes: {} | 3 spokes: {}\nSharp: {} | Wide: {} | Straight: {}",
+        "Generator: {:?}\nSeed: {}\nAttempts: {}\nPath tiles: {} (target {}–{})\n2 spokes: {} | 3 spokes: {}\nSharp: {} | Wide: {} | Straight: {}",
+        settings.generator,
         stats.seed,
         stats.attempts,
         stats.two_spoke + stats.three_spoke,

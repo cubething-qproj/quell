@@ -7,6 +7,11 @@ use rand::{
 };
 use std::{cmp::Reverse, collections::BinaryHeap};
 
+// Explicit path: `examples/hex_paths_measure.rs` includes this file by path,
+// which would otherwise resolve the module beside it.
+#[path = "generate/grow.rs"]
+mod grow;
+
 /// Whole-board retries before giving up on placement or routing.
 const MAX_ATTEMPTS: u32 = 100;
 /// Path costs are fixed-point so they can be ordered in a heap.
@@ -99,8 +104,12 @@ impl<'a, R: Rng> Generator<'a, R> {
     }
 
     /// Places and connects the nodes, then branches out until the path count
-    /// reaches a target drawn from the window.
+    /// reaches a target drawn from the window. The growing-tree generator
+    /// takes over instead when selected; see [`Self::run_growing_tree`].
     fn run(mut self) -> Result<BoardLayout, BoardGenError> {
+        if self.settings.generator == GeneratorKind::GrowingTree {
+            return self.run_growing_tree();
+        }
         let window = self.settings.target_window();
         let nodes = self.place_nodes()?;
         self.backbone(&nodes)?;
@@ -128,19 +137,7 @@ impl<'a, R: Rng> Generator<'a, R> {
         cards.shuffle(self.rng);
         let mut cells: Vec<Hex> = s.cells().collect();
         cells.shuffle(self.rng);
-        let nodes = cells
-            .into_iter()
-            .filter(|cell| cell.unsigned_distance_to(self.spawn) >= s.min_spawn_distance.max(1))
-            .fold(Vec::new(), |mut nodes, cell| {
-                if nodes.len() < cards.len()
-                    && nodes.iter().all(|node: &Hex| {
-                        node.unsigned_distance_to(cell) >= s.min_node_distance.max(1)
-                    })
-                {
-                    nodes.push(cell);
-                }
-                nodes
-            });
+        let nodes = self.spaced(cells, cards.len());
         if nodes.len() < cards.len() {
             return Err(BoardGenError::Placement);
         }
@@ -153,13 +150,28 @@ impl<'a, R: Rng> Generator<'a, R> {
         Ok(nodes)
     }
 
+    /// Takes up to `count` candidates, in order, that keep the configured
+    /// spacing from spawn and from each other.
+    fn spaced(&self, candidates: impl IntoIterator<Item = Hex>, count: usize) -> Vec<Hex> {
+        let s = self.settings;
+        candidates
+            .into_iter()
+            .filter(|cell| cell.unsigned_distance_to(self.spawn) >= s.min_spawn_distance.max(1))
+            .fold(Vec::new(), |mut nodes, cell| {
+                if nodes.len() < count
+                    && nodes.iter().all(|node: &Hex| {
+                        node.unsigned_distance_to(cell) >= s.min_node_distance.max(1)
+                    })
+                {
+                    nodes.push(cell);
+                }
+                nodes
+            })
+    }
+
     /// Connects each node to the network along a noisy cheapest route.
     fn backbone(&mut self, nodes: &[Hex]) -> Result<(), BoardGenError> {
-        let s = self.settings;
-        let costs: HashMap<Hex, u32> = s
-            .cells()
-            .map(|cell| (cell, to_cost(1. + s.noise * self.rng.random::<f32>())))
-            .collect();
+        let costs = self.cost_field();
         for &node in nodes {
             let route = self
                 .route(node, &costs, |_, _| true)
@@ -170,6 +182,14 @@ impl<'a, R: Rng> Generator<'a, R> {
             self.loop_nodes(nodes, &costs)?;
         }
         Ok(())
+    }
+
+    /// Random per-cell route costs, so routes share easy ground like trails.
+    fn cost_field(&mut self) -> HashMap<Hex, u32> {
+        let s = self.settings;
+        s.cells()
+            .map(|cell| (cell, to_cost(1. + s.noise * self.rng.random::<f32>())))
+            .collect()
     }
 
     /// Gives every node not already on a loop, in random order, a second route
@@ -544,9 +564,18 @@ mod tests {
         }
     }
 
-    fn variants() -> [HexPathsSettings; 5] {
+    fn variants() -> [HexPathsSettings; 7] {
         [
             HexPathsSettings::default(),
+            HexPathsSettings {
+                generator: GeneratorKind::GrowingTree,
+                ..default()
+            },
+            HexPathsSettings {
+                generator: GeneratorKind::GrowingTree,
+                newest_bias: 1.,
+                ..open()
+            },
             HexPathsSettings {
                 spawn: SpawnPlacement::Random,
                 noise: 0.,
@@ -721,9 +750,14 @@ mod tests {
 
     #[test]
     fn same_seed_same_board() {
-        let settings = HexPathsSettings::default();
-        let generate = || BoardLayout::generate(&settings, &mut StdRng::seed_from_u64(7));
-        assert_eq!(generate(), generate());
+        for generator in [GeneratorKind::Backbone, GeneratorKind::GrowingTree] {
+            let settings = HexPathsSettings {
+                generator,
+                ..default()
+            };
+            let generate = || BoardLayout::generate(&settings, &mut StdRng::seed_from_u64(7));
+            assert_eq!(generate(), generate());
+        }
     }
 
     #[test]

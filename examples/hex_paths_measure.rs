@@ -5,7 +5,7 @@
 //! optional comma-separated list of case names to sample.
 //! CSV output includes failed attempts, so they cannot improve the statistics.
 
-use data::{BoardStats, HexPathsSettings, ShapeWeights, SpawnPlacement};
+use data::{BoardStats, GeneratorKind, HexPathsSettings, ShapeWeights, SpawnPlacement};
 use generate::BoardLayout;
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -37,7 +37,16 @@ impl Case {
 
     /// One-factor comparisons, then a small junction/length/noise sweep.
     fn variants() -> Vec<Self> {
-        let mut cases = vec![Self::new("default", HexPathsSettings::default())];
+        let mut cases = vec![
+            Self::new("default", HexPathsSettings::default()),
+            Self::new(
+                "grow",
+                HexPathsSettings {
+                    generator: GeneratorKind::GrowingTree,
+                    ..Default::default()
+                },
+            ),
+        ];
         for noise in [0., 0.5, 5., 10.] {
             cases.push(Self::new(
                 format!("noise_{noise}"),
