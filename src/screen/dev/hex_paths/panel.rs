@@ -99,6 +99,11 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 integer("Branch length minimum", |s| s.min_branch_length, |s, v| s.min_branch_length = v),
                 integer("Branch length maximum", |s| s.max_branch_length, |s, v| s.max_branch_length = v),
                 decimal("Branch join chance (0–1)", |s| s.branch_join_chance, |s, v| s.branch_join_chance = v),
+                integer("Target path tiles", |s| s.target_paths, |s, v| s.target_paths = v),
+                decimal("Target tolerance (0–1)", |s| s.target_tolerance, |s, v| s.target_tolerance = v),
+                flag("No dead ends", |s| s.no_dead_ends, |s, v| s.no_dead_ends = v),
+                flag("Every node on a loop", |s| s.node_loops, |s, v| s.node_loops = v),
+                integer("Minimum loop length", |s| s.min_loop, |s, v| s.min_loop = v),
             ]
         )]
     }
@@ -135,6 +140,19 @@ fn decimal(
                 template(move |_| Ok(NumberSetting::<f32> { read, write }))
                 on(set_decimal)),
         ]
+    }
+}
+
+/// Checkbox for a boolean generation setting.
+fn flag(
+    caption: &'static str,
+    read: fn(&HexPathsSettings) -> bool,
+    write: fn(&mut HexPathsSettings, bool),
+) -> impl Scene {
+    bsn! {
+        @FeathersCheckbox { @caption: bsn! { label_small(caption) } }
+        template(move |_| Ok(FlagSetting { read, write }))
+        on(set_flag)
     }
 }
 
@@ -205,6 +223,19 @@ fn set_seed(
     }
 }
 
+/// Applies a checkbox to its generation setting.
+fn set_flag(
+    change: On<ValueChange<bool>>,
+    fields: Query<&FlagSetting>,
+    mut settings: ResMut<HexPathsSettings>,
+) {
+    if let Ok(field) = fields.get(change.source) {
+        let mut next = settings.clone();
+        (field.write)(&mut next, change.value);
+        settings.set_if_neq(next);
+    }
+}
+
 /// Applies a checkbox to its view option.
 fn set_toggle(
     change: On<ValueChange<bool>>,
@@ -226,6 +257,7 @@ pub(super) fn sync_settings(
     mut commands: Commands,
     integers: Query<(Entity, Ref<NumberSetting<u32>>)>,
     decimals: Query<(Entity, Ref<NumberSetting<f32>>)>,
+    flags: Query<(Entity, &FlagSetting, Has<Checked>)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
     mut spawn_text: Query<&mut Text, With<SpawnText>>,
 ) {
@@ -243,6 +275,16 @@ pub(super) fn sync_settings(
                 entity,
                 value: NumberInputValue::F32((field.read)(&settings)),
             });
+        }
+    }
+    for (entity, field, checked) in &flags {
+        let value = (field.read)(&settings);
+        if value != checked {
+            if value {
+                commands.entity(entity).insert(Checked);
+            } else {
+                commands.entity(entity).remove::<Checked>();
+            }
         }
     }
     for (entity, mut input, marker) in &mut seeds {
@@ -297,16 +339,21 @@ pub(super) fn sync_view(
 /// Displays the actual distribution and preserves useful errors while editing.
 pub(super) fn update_stats(
     stats: Option<Res<BoardStats>>,
+    settings: Res<HexPathsSettings>,
     panel: Res<PanelState>,
     mut texts: Query<&mut Text, With<StatsText>>,
 ) {
     let Some(stats) = stats else {
         return;
     };
+    let window = settings.target_window();
     let mut value = format!(
-        "Seed: {}\nAttempts: {}\n2 spokes: {} | 3 spokes: {}\nSharp: {} | Wide: {} | Straight: {}",
+        "Seed: {}\nAttempts: {}\nPath tiles: {} (target {}–{})\n2 spokes: {} | 3 spokes: {}\nSharp: {} | Wide: {} | Straight: {}",
         stats.seed,
         stats.attempts,
+        stats.two_spoke + stats.three_spoke,
+        window.start(),
+        window.end(),
         stats.two_spoke,
         stats.three_spoke,
         stats.shapes[0],

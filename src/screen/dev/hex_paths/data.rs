@@ -71,6 +71,13 @@ pub struct NumberSetting<T: Send + Sync + 'static> {
     pub write: fn(&mut HexPathsSettings, T),
 }
 
+/// Typed binding between a checkbox and a boolean generation setting.
+#[derive(Component, Clone, Copy)]
+pub struct FlagSetting {
+    pub read: fn(&HexPathsSettings) -> bool,
+    pub write: fn(&mut HexPathsSettings, bool),
+}
+
 /// The play-time visibility option controlled by a checkbox.
 #[derive(Component, Clone, Copy)]
 pub enum ViewToggle {
@@ -442,7 +449,20 @@ pub struct HexPathsSettings {
     pub min_branch_length: u32,
     pub max_branch_length: u32,
     /// Chance a branch connects into an adjacent tile instead of dead-ending.
+    /// Ignored with `no_dead_ends`, where every branch must connect.
     pub branch_join_chance: f32,
+    /// Path tiles to aim for; each board draws its target uniformly from
+    /// `target_paths ± target_tolerance` (a fraction).
+    pub target_paths: u32,
+    pub target_tolerance: f32,
+    /// Every spoke must meet a matching spoke: no dead ends, nothing pointing
+    /// off the map. Nodes may still end a path.
+    pub no_dead_ends: bool,
+    /// Shortest loop, in tiles around, that a branch closing with
+    /// `no_dead_ends`, or a node's second route, may form.
+    pub min_loop: u32,
+    /// Every node sits on a loop: it has two separate ways out.
+    pub node_loops: bool,
 }
 
 impl Default for HexPathsSettings {
@@ -469,9 +489,14 @@ impl Default for HexPathsSettings {
                 straight: 1.,
             },
             junction_chance: 0.25,
-            min_branch_length: 1,
-            max_branch_length: 4,
+            min_branch_length: 3,
+            max_branch_length: 8,
             branch_join_chance: 0.3,
+            target_paths: 30,
+            target_tolerance: 0.1,
+            no_dead_ends: true,
+            min_loop: 8,
+            node_loops: true,
         }
     }
 }
@@ -510,6 +535,14 @@ impl HexPathsSettings {
         }
     }
 
+    /// Acceptable path tile counts: `target_paths ± target_tolerance`.
+    pub fn target_window(&self) -> std::ops::RangeInclusive<u32> {
+        let target = self.target_paths as f32;
+        let low = (target * (1. - self.target_tolerance)).ceil().max(0.) as u32;
+        let high = (target * (1. + self.target_tolerance)).floor().max(0.) as u32;
+        low..=high
+    }
+
     /// Validates invariants on HexPathsSettings. Returns the first violated
     /// invariant.
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -544,6 +577,10 @@ impl HexPathsSettings {
             (
                 chance.contains(&self.junction_chance) && chance.contains(&self.branch_join_chance),
                 "chances must be within 0..=1",
+            ),
+            (
+                (0. ..1.).contains(&self.target_tolerance) && !self.target_window().is_empty(),
+                "target tolerance must be within 0..1 and leave a non-empty window",
             ),
         ]
         .into_iter()

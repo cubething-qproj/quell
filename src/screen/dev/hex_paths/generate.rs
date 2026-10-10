@@ -1,5 +1,5 @@
 use super::data::*;
-use bevy::platform::collections::HashMap;
+use bevy::platform::collections::{HashMap, HashSet};
 use hexx::{EdgeDirection, Hex};
 use rand::{
     Rng, RngExt,
@@ -11,6 +11,9 @@ use std::{cmp::Reverse, collections::BinaryHeap};
 const MAX_ATTEMPTS: u32 = 100;
 /// Path costs are fixed-point so they can be ordered in a heap.
 const COST_SCALE: f32 = 100.;
+/// Passes over the network while spending the path budget, and attempts at
+/// the spawn minimum, before an attempt counts as stuck.
+const MAX_SWEEPS: u32 = 50;
 
 /// Why a board could not be generated.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -21,6 +24,13 @@ pub enum BoardGenError {
     Placement,
     /// Some node could not be connected to spawn.
     Unreachable,
+    /// Some node could not be given a second, far-reaching way out.
+    Unloopable,
+    /// Connecting the nodes alone needs more path tiles than the target allows.
+    OverBudget,
+    /// Growth was boxed in before reaching the target, or before spawn got
+    /// its minimum spokes.
+    Stuck,
 }
 
 /// Generator output. Cells without a tile are empty.
@@ -88,12 +98,21 @@ impl<'a, R: Rng> Generator<'a, R> {
         }
     }
 
-    /// Places and connects the nodes, then decorates the network.
+    /// Places and connects the nodes, then branches out until the path count
+    /// reaches a target drawn from the window.
     fn run(mut self) -> Result<BoardLayout, BoardGenError> {
+        let window = self.settings.target_window();
         let nodes = self.place_nodes()?;
         self.backbone(&nodes)?;
-        self.spawn_minimum();
-        self.decorate();
+        self.spawn_minimum()?;
+        if self.paths() > *window.end() {
+            return Err(BoardGenError::OverBudget);
+        }
+        let target = self.rng.random_range(window.clone());
+        self.spend(target);
+        if !window.contains(&self.paths()) {
+            return Err(BoardGenError::Stuck);
+        }
         Ok(BoardLayout {
             tiles: self.tiles,
             spawn: self.spawn,
@@ -142,26 +161,67 @@ impl<'a, R: Rng> Generator<'a, R> {
             .map(|cell| (cell, to_cost(1. + s.noise * self.rng.random::<f32>())))
             .collect();
         for &node in nodes {
-            let route = self.route(node, &costs).ok_or(BoardGenError::Unreachable)?;
-            for pair in route.windows(2) {
-                let dir = pair[0]
-                    .neighbor_direction(pair[1])
-                    .expect("route steps are adjacent");
-                self.connect(pair[0], dir);
-            }
+            let route = self
+                .route(node, &costs, |_, _| true)
+                .ok_or(BoardGenError::Unreachable)?;
+            self.commit(&route);
+        }
+        if self.settings.node_loops {
+            self.loop_nodes(nodes, &costs)?;
         }
         Ok(())
     }
 
-    /// Cheapest route from `start` through empty cells to a joinable tile.
-    /// Search state includes the entry direction so bends can be priced by
-    /// shape. No heuristic: boards are small, and there are many goals.
-    /// Routes never revisit a cell, which would give it more than 2 spokes;
-    /// that pruning can miss a route, which the caller retries.
-    fn route(&self, start: Hex, costs: &HashMap<Hex, u32>) -> Option<Vec<Hex>> {
+    /// Gives every node not already on a loop, in random order, a second route
+    /// out, which must rejoin the network at least `min_loop` tiles around it.
+    fn loop_nodes(
+        &mut self,
+        nodes: &[Hex],
+        costs: &HashMap<Hex, u32>,
+    ) -> Result<(), BoardGenError> {
+        let least = self.settings.min_loop.max(3) as usize;
+        let mut order = nodes.to_vec();
+        order.shuffle(self.rng);
+        for node in order {
+            if self.looped(node) {
+                continue;
+            }
+            let around = self.distances(node);
+            let far = |hex: Hex, steps: usize| around.get(&hex).is_none_or(|&d| d + steps >= least);
+            let route = self
+                .route(node, costs, far)
+                .ok_or(BoardGenError::Unloopable)?;
+            self.commit(&route);
+        }
+        Ok(())
+    }
+
+    /// Adds mutual spokes along a route of adjacent cells.
+    fn commit(&mut self, route: &[Hex]) {
+        for pair in route.windows(2) {
+            let dir = pair[0]
+                .neighbor_direction(pair[1])
+                .expect("route steps are adjacent");
+            self.connect(pair[0], dir);
+        }
+    }
+
+    /// Cheapest route from `start` through empty cells to a joinable tile
+    /// that `accept`s the route's step count. Search state includes the entry
+    /// direction so bends can be priced by shape. No heuristic: boards are
+    /// small, and there are many goals. Routes never revisit a cell, which
+    /// would give it more than 2 spokes; that pruning can miss a route, which
+    /// the caller retries.
+    fn route(
+        &self,
+        start: Hex,
+        costs: &HashMap<Hex, u32>,
+        accept: impl Fn(Hex, usize) -> bool,
+    ) -> Option<Vec<Hex>> {
         type State = (Hex, Option<EdgeDirection>);
         let mut states: Vec<State> = vec![(start, None)];
         let mut came_from: Vec<Option<usize>> = vec![None];
+        let mut depth: Vec<usize> = vec![0];
         let mut best: HashMap<State, u32> = HashMap::from([((start, None), 0)]);
         let mut open = BinaryHeap::from([Reverse((0, 0))]);
 
@@ -180,7 +240,7 @@ impl<'a, R: Rng> Generator<'a, R> {
                 let next = hex.neighbor(exit);
                 let enterable = match self.tiles.contains_key(&next) {
                     false => self.settings.contains(next),
-                    true => next != start && self.joinable(next),
+                    true => next != start && self.joinable(next) && accept(next, depth[index] + 1),
                 };
                 // Only path tiles have a shape; leaving the start node is free.
                 let turn = match entered {
@@ -203,17 +263,22 @@ impl<'a, R: Rng> Generator<'a, R> {
                 best.insert(state, next_cost);
                 states.push(state);
                 came_from.push(Some(index));
+                depth.push(depth[index] + 1);
                 open.push(Reverse((next_cost, states.len() - 1)));
             }
         }
         None
     }
 
-    /// Adds spokes to spawn until it reaches its minimum.
-    fn spawn_minimum(&mut self) {
+    /// Adds spokes to spawn until it reaches its minimum. Fails only when
+    /// branches must close loops and none from spawn can.
+    fn spawn_minimum(&mut self) -> Result<(), BoardGenError> {
         let spawn = self.spawn;
-        while self.tiles[&spawn].spokes.count() < self.settings.min_spawn_spokes {
+        for _ in 0..MAX_SWEEPS {
             let spokes = self.tiles[&spawn].spokes;
+            if spokes.count() >= self.settings.min_spawn_spokes {
+                return Ok(());
+            }
             let free: Vec<_> = EdgeDirection::ALL_DIRECTIONS
                 .into_iter()
                 .filter(|&dir| !spokes.has(dir))
@@ -221,45 +286,79 @@ impl<'a, R: Rng> Generator<'a, R> {
             let &dir = free
                 .choose(self.rng)
                 .expect("validated min_spawn_spokes <= 6");
-            self.branch(spawn, dir);
+            self.branch(spawn, dir, None);
         }
+        Err(BoardGenError::Stuck)
     }
 
-    /// Upgrades existing 2-spoke path tiles to junctions, each growing a branch.
-    /// New branch tiles cannot themselves grow branches during this pass.
-    fn decorate(&mut self) {
+    /// Upgrades 2-spoke path tiles to junctions, in random order, each growing
+    /// a branch capped to the tiles still owed. Repeats over the grown network
+    /// until the path count reaches `target` or no branch fits.
+    fn spend(&mut self, target: u32) {
         let s = self.settings;
-        let candidates: Vec<_> = s
-            .cells()
-            .filter(|hex| {
-                self.tiles
-                    .get(hex)
-                    .is_some_and(|tile| tile.kind == TileKind::Path && tile.spokes.count() == 2)
-            })
-            .collect();
-        for hex in candidates {
-            let tile = self.tiles[&hex];
-            // An earlier branch may already have joined this candidate.
-            if tile.spokes.count() != 2 || !self.rng.random_bool(s.junction_chance as f64) {
-                continue;
-            }
-            let open: Vec<_> = EdgeDirection::ALL_DIRECTIONS
-                .into_iter()
-                .filter(|&dir| !tile.spokes.has(dir) && self.is_empty(hex.neighbor(dir)))
+        for _ in 0..MAX_SWEEPS {
+            let mut candidates: Vec<_> = s
+                .cells()
+                .filter(|hex| {
+                    self.tiles
+                        .get(hex)
+                        .is_some_and(|tile| tile.kind == TileKind::Path && tile.spokes.count() == 2)
+                })
                 .collect();
-            if let Some(&dir) = open.choose(self.rng) {
-                self.branch(hex, dir);
+            if self.paths() >= target || candidates.is_empty() {
+                return;
+            }
+            candidates.shuffle(self.rng);
+            for hex in candidates {
+                let owed = target.saturating_sub(self.paths());
+                let tile = self.tiles[&hex];
+                // An earlier branch may already have joined this candidate.
+                if owed == 0
+                    || tile.spokes.count() != 2
+                    || !self.rng.random_bool(s.junction_chance as f64)
+                {
+                    continue;
+                }
+                let open: Vec<_> = EdgeDirection::ALL_DIRECTIONS
+                    .into_iter()
+                    .filter(|&dir| !tile.spokes.has(dir) && self.is_empty(hex.neighbor(dir)))
+                    .collect();
+                if let Some(&dir) = open.choose(self.rng) {
+                    self.branch(hex, dir, Some(owed));
+                }
             }
         }
     }
 
-    /// Grows a random walk from `origin`, leaving it in `first`. The walk ends
-    /// joined into an adjacent tile or in a dangling spoke.
-    fn branch(&mut self, origin: Hex, first: EdgeDirection) {
+    /// Grows a random walk from `origin`, leaving it in `first`, at most `cap`
+    /// tiles long. The walk ends joined into an adjacent tile or in a dangling
+    /// spoke. With `no_dead_ends` it must instead close a loop of at least
+    /// `min_loop` tiles, and is undone if it cannot.
+    fn branch(&mut self, origin: Hex, first: EdgeDirection, cap: Option<u32>) {
+        if !self.settings.no_dead_ends {
+            self.walk(origin, first, cap, false);
+            return;
+        }
+        let before = self.tiles.clone();
+        if !self.walk(origin, first, cap, true) {
+            self.tiles = before;
+        }
+    }
+
+    /// The walk behind [`Self::branch`]. Returns false if a `closed` walk
+    /// could not close its loop, leaving the board for the caller to restore.
+    fn walk(&mut self, origin: Hex, first: EdgeDirection, cap: Option<u32>, closed: bool) -> bool {
         let s = self.settings;
-        let length = self
+        let drawn = self
             .rng
             .random_range(s.min_branch_length..=s.max_branch_length);
+        let length = cap.map_or(drawn, |cap| drawn.min(cap));
+        // Network distances from `origin` before the walk, to size its loop.
+        let around = match closed && s.min_loop > 0 {
+            true => self.distances(origin),
+            false => HashMap::default(),
+        };
+        let mut walked = HashMap::from([(origin, 0)]);
         let (mut at, mut entered) = (origin, None);
         for _ in 0..length {
             let exit = match entered {
@@ -274,24 +373,38 @@ impl<'a, R: Rng> Generator<'a, R> {
             }
             self.connect(at, exit);
             (at, entered) = (at.neighbor(exit), Some(exit));
+            walked.insert(at, walked.len());
         }
 
         let Some(entered) = entered else {
-            self.spoke(origin, first);
-            return;
+            if !closed {
+                self.spoke(origin, first);
+            }
+            return !closed;
         };
-        let join = match self.rng.random_bool(s.branch_join_chance as f64) {
-            true => self.pick_turn(at, entered, Self::joinable),
+        let added = walked.len() - 1;
+        // Tiles around the loop formed by joining `hex` from the walk's head.
+        let closes = |generator: &Self, hex: Hex| {
+            let loop_size = match walked.get(&hex) {
+                Some(&step) => added - step + 1,
+                None => around.get(&hex).map_or(usize::MAX, |&d| d + added + 1),
+            };
+            generator.joinable(hex) && loop_size >= s.min_loop as usize
+        };
+        let join = match closed || self.rng.random_bool(s.branch_join_chance as f64) {
+            true => self.pick_turn(at, entered, closes),
             false => None,
         };
         match join {
             Some(exit) => self.connect(at, exit),
+            None if closed => return false,
             None => {
                 if let Some(exit) = self.pick_turn(at, entered, |_, _| true) {
                     self.spoke(at, exit);
                 }
             }
         }
+        true
     }
 
     /// Picks an exit from `at`, weighted by the resulting path shape, among
@@ -314,6 +427,68 @@ impl<'a, R: Rng> Generator<'a, R> {
             .choose_weighted(self.rng, |(_, weight)| *weight)
             .ok()
             .map(|&(exit, _)| exit)
+    }
+
+    /// Number of path tiles, excluding spawn and nodes.
+    fn paths(&self) -> u32 {
+        self.tiles
+            .values()
+            .filter(|tile| tile.kind == TileKind::Path)
+            .count() as u32
+    }
+
+    /// Neighbors reachable from `hex` across a spoke on both sides.
+    fn crossings(&self, hex: Hex) -> impl Iterator<Item = Hex> + '_ {
+        let spokes = self
+            .tiles
+            .get(&hex)
+            .map(|tile| tile.spokes)
+            .unwrap_or_default();
+        EdgeDirection::ALL_DIRECTIONS
+            .into_iter()
+            .filter_map(move |dir| {
+                let next = self.tiles.get(&hex.neighbor(dir))?;
+                spokes
+                    .crosses(next.spokes, dir)
+                    .then_some(hex.neighbor(dir))
+            })
+    }
+
+    /// Steps from `from` to every tile it can walk to.
+    fn distances(&self, from: Hex) -> HashMap<Hex, usize> {
+        let mut distances = HashMap::from([(from, 0)]);
+        let mut frontier = std::collections::VecDeque::from([from]);
+        while let Some(hex) = frontier.pop_front() {
+            let next_distance = distances[&hex] + 1;
+            for next in self.crossings(hex) {
+                if !distances.contains_key(&next) {
+                    distances.insert(next, next_distance);
+                    frontier.push_back(next);
+                }
+            }
+        }
+        distances
+    }
+
+    /// Whether `node` sits on a loop: some crossing out of it can be returned
+    /// from by another way, so it is not a bridge.
+    fn looped(&self, node: Hex) -> bool {
+        self.crossings(node).any(|first| {
+            let mut seen = HashSet::from([node, first]);
+            let mut frontier = vec![first];
+            while let Some(hex) = frontier.pop() {
+                for next in self.crossings(hex) {
+                    // Skip only the crossing back across `node`–`first` itself.
+                    if next == node && hex != first {
+                        return true;
+                    }
+                    if seen.insert(next) {
+                        frontier.push(next);
+                    }
+                }
+            }
+            false
+        })
     }
 
     fn is_empty(&self, hex: Hex) -> bool {
@@ -357,18 +532,31 @@ mod tests {
     use bevy::platform::collections::HashSet;
     use rand::{SeedableRng, rngs::StdRng};
 
-    fn variants() -> [HexPathsSettings; 4] {
+    /// Dead ends allowed, nodes not looped, as before the loop settings.
+    fn open() -> HexPathsSettings {
+        HexPathsSettings {
+            no_dead_ends: false,
+            node_loops: false,
+            min_branch_length: 1,
+            max_branch_length: 4,
+            target_paths: 20,
+            ..default()
+        }
+    }
+
+    fn variants() -> [HexPathsSettings; 5] {
         [
             HexPathsSettings::default(),
-            HexPathsSettings {
-                junction_chance: 1.,
-                branch_join_chance: 1.,
-                ..default()
-            },
             HexPathsSettings {
                 spawn: SpawnPlacement::Random,
                 noise: 0.,
                 ..default()
+            },
+            open(),
+            HexPathsSettings {
+                junction_chance: 1.,
+                branch_join_chance: 1.,
+                ..open()
             },
             HexPathsSettings {
                 shape_weights: ShapeWeights {
@@ -379,7 +567,7 @@ mod tests {
                 min_branch_length: 0,
                 min_spawn_spokes: 4,
                 max_spawn_spokes: 6,
-                ..default()
+                ..open()
             },
         ]
     }
@@ -404,16 +592,20 @@ mod tests {
             })
     }
 
-    fn reachable(layout: &BoardLayout) -> HashSet<Hex> {
-        let mut seen = HashSet::from([layout.spawn]);
-        let mut frontier = vec![layout.spawn];
+    /// Tiles walkable from `from` without stepping onto `avoid`.
+    fn reachable(layout: &BoardLayout, from: Hex, avoid: Option<Hex>) -> HashSet<Hex> {
+        let mut seen = HashSet::from([from]);
+        let mut frontier = vec![from];
         while let Some(hex) = frontier.pop() {
             for dir in EdgeDirection::ALL_DIRECTIONS {
                 let next = hex.neighbor(dir);
                 let Some(to) = layout.tiles.get(&next) else {
                     continue;
                 };
-                if layout.tiles[&hex].spokes.crosses(to.spokes, dir) && seen.insert(next) {
+                if Some(next) != avoid
+                    && layout.tiles[&hex].spokes.crosses(to.spokes, dir)
+                    && seen.insert(next)
+                {
                     frontier.push(next);
                 }
             }
@@ -422,10 +614,62 @@ mod tests {
     }
 
     #[test]
-    fn spawn_reaches_every_node() {
+    fn spawn_reaches_every_tile() {
         for (_, layout) in boards() {
-            let reachable = reachable(&layout);
-            assert!(nodes(&layout).all(|(node, _)| reachable.contains(&node)));
+            assert_eq!(
+                reachable(&layout, layout.spawn, None).len(),
+                layout.tiles.len()
+            );
+        }
+    }
+
+    #[test]
+    fn path_count_lands_in_window() {
+        for (settings, layout) in boards() {
+            let paths = layout
+                .tiles
+                .values()
+                .filter(|tile| tile.kind == TileKind::Path)
+                .count() as u32;
+            assert!(settings.target_window().contains(&paths), "{paths}");
+        }
+    }
+
+    #[test]
+    fn closed_boards_have_no_dead_ends() {
+        for (_, layout) in boards().filter(|(settings, _)| settings.no_dead_ends) {
+            for (&hex, tile) in &layout.tiles {
+                for dir in EdgeDirection::ALL_DIRECTIONS
+                    .into_iter()
+                    .filter(|&d| tile.spokes.has(d))
+                {
+                    let partner = layout.tiles.get(&hex.neighbor(dir));
+                    assert!(partner.is_some_and(|to| tile.spokes.crosses(to.spokes, dir)));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_node_sits_on_a_loop() {
+        // A node is on a loop iff two of its neighbors stay connected without it.
+        for (_, layout) in boards().filter(|(settings, _)| settings.node_loops) {
+            for (node, _) in nodes(&layout) {
+                let next: Vec<_> = EdgeDirection::ALL_DIRECTIONS
+                    .into_iter()
+                    .filter(|&dir| {
+                        layout
+                            .tiles
+                            .get(&node.neighbor(dir))
+                            .is_some_and(|to| layout.tiles[&node].spokes.crosses(to.spokes, dir))
+                    })
+                    .map(|dir| node.neighbor(dir))
+                    .collect();
+                assert!(next.iter().enumerate().any(|(i, &a)| {
+                    let around = reachable(&layout, a, Some(node));
+                    next[i + 1..].iter().any(|b| around.contains(b))
+                }));
+            }
         }
     }
 
@@ -483,83 +727,6 @@ mod tests {
     }
 
     #[test]
-    fn decoration_adds_a_third_spoke() {
-        let settings = HexPathsSettings {
-            columns: 3,
-            rows: 3,
-            junction_chance: 1.,
-            min_branch_length: 0,
-            max_branch_length: 0,
-            ..default()
-        };
-        for seed in 0..32 {
-            let mut rng = StdRng::seed_from_u64(seed);
-            let mut generator = Generator::new(&settings, &mut rng);
-            let mut tile = LayoutTile::from(TileKind::Path);
-            for dir in EdgeDirection::ALL_DIRECTIONS.into_iter().take(2) {
-                tile.spokes.insert(dir);
-            }
-            generator.tiles.insert(generator.spawn, tile);
-
-            generator.decorate();
-
-            assert_eq!(
-                generator.tiles[&generator.spawn].spokes.count(),
-                3,
-                "seed {seed}"
-            );
-        }
-    }
-
-    #[test]
-    fn decoration_does_not_branch_from_new_path_tiles() {
-        // Open space lets a new tile sprout through an unused edge later in
-        // the grid scan. Only the original tile should get a junction roll.
-        let settings = HexPathsSettings {
-            columns: 3,
-            rows: 8,
-            junction_chance: 1.,
-            min_branch_length: 1,
-            max_branch_length: 1,
-            branch_join_chance: 0.,
-            shape_weights: ShapeWeights {
-                sharp: 0.,
-                wide: 0.,
-                straight: 1.,
-            },
-            ..default()
-        };
-        let mut rng = StdRng::seed_from_u64(7);
-        let mut generator = Generator::new(&settings, &mut rng);
-        let origin = settings.cell(0, 0);
-        let mut tile = LayoutTile::from(TileKind::Path);
-        for dir in EdgeDirection::ALL_DIRECTIONS
-            .into_iter()
-            .filter(|&dir| !settings.contains(origin.neighbor(dir)))
-            .take(2)
-        {
-            tile.spokes.insert(dir);
-        }
-        generator.tiles.insert(origin, tile);
-
-        generator.decorate();
-
-        assert_eq!(generator.tiles[&origin].spokes.count(), 3);
-        let paths: Vec<_> = generator
-            .tiles
-            .iter()
-            .filter(|(_, tile)| tile.kind == TileKind::Path)
-            .collect();
-        assert_eq!(paths.len(), 2, "one original tile and one branch tile");
-        assert!(
-            paths
-                .iter()
-                .filter(|(hex, _)| **hex != origin)
-                .all(|(_, tile)| tile.spokes.count() == 2)
-        );
-    }
-
-    #[test]
     fn impossible_settings_fail() {
         let crowded = HexPathsSettings {
             columns: 3,
@@ -579,6 +746,14 @@ mod tests {
         );
         assert!(matches!(
             BoardLayout::generate(&inverted, rng),
+            Err(BoardGenError::InvalidSettings(_))
+        ));
+        let no_window = HexPathsSettings {
+            target_tolerance: 1.,
+            ..default()
+        };
+        assert!(matches!(
+            BoardLayout::generate(&no_window, rng),
             Err(BoardGenError::InvalidSettings(_))
         ));
         let excessive_spawn_spokes = HexPathsSettings {
