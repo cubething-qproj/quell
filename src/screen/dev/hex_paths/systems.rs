@@ -2,9 +2,10 @@ use super::{data::*, generate::BoardLayout, panel, screen::HexPathsScreen};
 use crate::prelude::*;
 use bevy::{
     camera::{ScalingMode, Viewport},
+    platform::collections::HashSet,
     window::PrimaryWindow,
 };
-use hexx::EdgeDirection;
+use hexx::{EdgeDirection, Hex};
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Creates the board camera and panel once when entering the screen.
@@ -71,6 +72,7 @@ pub(super) fn spawn_board(
             }
             commands.spawn((
                 HexPathsPlayer,
+                Walk::default(),
                 HexPos(layout.spawn),
                 Transform::from_translation(board.layout.hex_to_world_pos(layout.spawn).extend(0.)),
                 ChildOf(root),
@@ -86,6 +88,95 @@ pub(super) fn spawn_board(
                 ..default()
             });
         }
+    }
+}
+
+/// Sends a [`WalkTo`] for a left click on the board. Clicks on the settings
+/// panel fall outside the board camera's viewport and are ignored.
+pub(super) fn click_to_walk(
+    mouse: Res<ButtonInput<MouseButton>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    camera: Single<(&Camera, &GlobalTransform), With<HexPathsCamera>>,
+    board: Option<Res<Board>>,
+    mut walks: MessageWriter<WalkTo>,
+) {
+    let (camera, transform) = *camera;
+    let Some(board) = board.filter(|_| mouse.just_pressed(MouseButton::Left)) else {
+        return;
+    };
+    let Some(world) = window
+        .cursor_position()
+        .filter(|&cursor| {
+            camera
+                .logical_viewport_rect()
+                .is_some_and(|rect| rect.contains(cursor))
+        })
+        .and_then(|cursor| camera.viewport_to_world_2d(transform, cursor).ok())
+    else {
+        return;
+    };
+    walks.write(WalkTo(board.layout.world_pos_to_hex(world)));
+}
+
+/// Replaces the player's route with one to the latest [`WalkTo`]. A walk in
+/// progress replans from the tile being entered, so the token never stops
+/// mid-edge. Unreachable targets are ignored.
+pub(super) fn plan_walk(
+    mut walks: MessageReader<WalkTo>,
+    board: Option<Res<Board>>,
+    tiles: Query<(&Spokes, Has<Revealed>)>,
+    mut player: Query<(&HexPos, &mut Walk), With<HexPathsPlayer>>,
+) {
+    let Some(WalkTo(to)) = walks.read().last().copied() else {
+        return;
+    };
+    let (Some(board), Ok((position, mut walk))) = (board, player.single_mut()) else {
+        return;
+    };
+    let entering = walk.route.front().copied();
+    let tile = |hex: Hex| {
+        let (spokes, revealed) = tiles.get(*board.tiles.get(&hex)?).ok()?;
+        Some((*spokes, revealed))
+    };
+    if let Some(route) = Walk::plan(entering.unwrap_or(position.0), to, tile) {
+        walk.route = entering.into_iter().chain(route).collect();
+    }
+}
+
+/// Eases the player along its route, one tile per `step_duration`. Arriving
+/// at a tile moves the player there and reveals it.
+pub(super) fn walk(
+    mut commands: Commands,
+    time: Res<Time>,
+    view: Res<HexPathsView>,
+    board: Option<Res<Board>>,
+    mut player: Query<(&mut HexPos, &mut Walk, &mut Transform), With<HexPathsPlayer>>,
+) {
+    let Some(board) = board else {
+        return;
+    };
+    for (mut position, mut walk, mut transform) in &mut player {
+        if !walk.route.is_empty() {
+            walk.progress += time.delta_secs() / view.step_duration;
+        }
+        while walk.progress >= 1.
+            && let Some(next) = walk.route.pop_front()
+        {
+            walk.progress -= 1.;
+            position.0 = next;
+            if let Some(&tile) = board.tiles.get(&next) {
+                commands.entity(tile).insert(Revealed);
+            }
+        }
+        if walk.route.is_empty() {
+            walk.progress = 0.;
+        }
+        let here = board.layout.hex_to_world_pos(position.0);
+        let at = walk.route.front().map_or(here, |&next| {
+            let t = EaseFunction::SmoothStep.sample_clamped(walk.progress);
+            here.lerp(board.layout.hex_to_world_pos(next), t)
+        });
+        transform.translation = at.extend(transform.translation.z);
     }
 }
 
@@ -122,13 +213,14 @@ pub(super) fn fit_camera(
     }
 }
 
-/// Draws outlines, known spokes, node markers, and the player token.
+/// Draws outlines, seen tiles, known spokes, node markers, and the player
+/// token with its route.
 pub(super) fn draw_board(
     board: Option<Res<Board>>,
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
     tiles: Query<(&HexPos, &TileKind, &Spokes, Has<Revealed>)>,
-    player: Query<&Transform, With<HexPathsPlayer>>,
+    player: Query<(&Transform, &Walk), With<HexPathsPlayer>>,
     mut gizmos: Gizmos<HexPathsGizmos>,
 ) {
     let Some(board) = board else {
@@ -137,9 +229,22 @@ pub(super) fn draw_board(
     for hex in board.cells() {
         gizmos.lineloop_2d(board.layout.hex_corners(hex), appearance.grid);
     }
+    let known: HashSet<Hex> = tiles
+        .iter()
+        .filter_map(|(position, _, _, revealed)| revealed.then_some(position.0))
+        .collect();
     for (position, kind, spokes, revealed) in &tiles {
         let hex = position.0;
         let center = board.layout.hex_to_world_pos(hex);
+        // Like looking through the trees: you can see a tile is there, but
+        // not where its paths go.
+        if !revealed && hex.all_neighbors().iter().any(|n| known.contains(n)) {
+            let corners = board.layout.hex_corners(hex);
+            gizmos.lineloop_2d(
+                corners.map(|corner| center + (corner - center) * appearance.seen_inset),
+                appearance.seen,
+            );
+        }
         if revealed || view.show_paths {
             for dir in EdgeDirection::ALL_DIRECTIONS
                 .into_iter()
@@ -186,12 +291,17 @@ pub(super) fn draw_board(
             TileKind::Path => {}
         }
     }
-    for transform in &player {
-        gizmos.circle_2d(
-            transform.translation.truncate(),
-            appearance.marker_radius / 2.,
-            appearance.player,
+    for (transform, walk) in &player {
+        let at = transform.translation.truncate();
+        gizmos.linestrip_2d(
+            std::iter::once(at).chain(
+                walk.route
+                    .iter()
+                    .map(|&hex| board.layout.hex_to_world_pos(hex)),
+            ),
+            appearance.route,
         );
+        gizmos.circle_2d(at, appearance.marker_radius / 2., appearance.player);
     }
 }
 

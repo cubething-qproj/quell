@@ -24,6 +24,7 @@ pub fn plugin(app: &mut App) {
         .init_resource::<data::HexPathsView>()
         .init_resource::<data::HexPathsAppearance>()
         .init_resource::<data::PanelState>()
+        .add_message::<data::WalkTo>()
         .register_type::<data::HexPathsSettings>()
         .register_type::<data::HexPathsView>()
         .register_type::<data::HexPathsAppearance>()

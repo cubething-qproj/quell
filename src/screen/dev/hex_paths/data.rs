@@ -1,8 +1,9 @@
 use super::generate::{BoardGenError, BoardLayout};
 use crate::prelude::*;
 use bevy::platform::collections::HashMap;
-use hexx::{EdgeDirection, Hex, HexLayout, HexOrientation, OffsetHexMode};
+use hexx::{EdgeDirection, Hex, HexLayout, HexOrientation, OffsetHexMode, algorithms::a_star};
 use rand::{Rng, RngExt};
+use std::collections::VecDeque;
 
 const OFFSET_MODE: OffsetHexMode = OffsetHexMode::Even;
 
@@ -17,6 +18,10 @@ pub struct Revealed;
 /// Player token for the hex prototype.
 #[derive(Component)]
 pub struct HexPathsPlayer;
+
+/// Request for the player to walk to a tile, e.g. from a click.
+#[derive(Message, Debug, Clone, Copy)]
+pub struct WalkTo(pub Hex);
 
 /// Root of the entities replaced when the board regenerates.
 #[derive(Component)]
@@ -134,6 +139,38 @@ impl Spokes {
     }
 }
 
+/// The player's remaining route. `progress` is the fraction of the step
+/// toward the route's first tile; arriving there reveals it.
+#[derive(Component, Debug, Default)]
+pub struct Walk {
+    pub route: VecDeque<Hex>,
+    pub progress: f32,
+}
+
+impl Walk {
+    /// Shortest route from `from` to `to`, excluding `from`, that crosses only
+    /// into tiles the player knows: revealed tiles, plus `to` itself one step
+    /// past them. `tile` gives a cell's spokes and whether it is revealed.
+    /// `from` counts as known, since the player is on it or entering it.
+    pub fn plan(
+        from: Hex,
+        to: Hex,
+        tile: impl Fn(Hex) -> Option<(Spokes, bool)>,
+    ) -> Option<VecDeque<Hex>> {
+        let path = a_star(from, to, |a, b| {
+            // hexx probes the start and end with themselves.
+            if a == b {
+                return Some(0);
+            }
+            let dir = a.neighbor_direction(b)?;
+            let ((leaving, a_known), (entering, b_known)) = (tile(a)?, tile(b)?);
+            ((a_known || a == from) && (b_known || b == to) && leaving.crosses(entering, dir))
+                .then_some(1)
+        })?;
+        Some(path.into_iter().skip(1).collect())
+    }
+}
+
 /// Shape of a 2-spoke tile, by the angle between its spokes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
 pub enum PathShape {
@@ -185,7 +222,12 @@ pub struct HexPathsAppearance {
     pub board_padding: f32,
     pub marker_radius: f32,
     pub dead_end_size: f32,
+    /// Inset of a seen tile's outline, as a fraction of the hex radius.
+    pub seen_inset: f32,
     pub grid: Color,
+    /// Unrevealed tiles next to a revealed one: visible, but not their paths.
+    pub seen: Color,
+    pub route: Color,
     pub paths: Color,
     pub spawn: Color,
     pub player: Color,
@@ -203,7 +245,10 @@ impl Default for HexPathsAppearance {
             board_padding: 1.,
             marker_radius: 0.22,
             dead_end_size: 0.055,
+            seen_inset: 0.75,
             grid: Color::srgb(0.25, 0.28, 0.32),
+            seen: Color::srgb(0.45, 0.5, 0.56),
+            route: Color::srgb(1., 0.92, 0.55),
             paths: Color::srgb(0.75, 0.8, 0.85),
             spawn: Color::srgb(0.3, 0.9, 0.5),
             player: Color::WHITE,
@@ -504,5 +549,50 @@ impl HexPathsSettings {
         .into_iter()
         .find(|(ok, _)| !ok)
         .map_or(Ok(()), |(_, reason)| Err(reason))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A straight corridor of `len` tiles heading in direction 0, with mutual
+    /// spokes between consecutive tiles. The first `revealed` are revealed.
+    fn corridor(len: i32, revealed: i32) -> HashMap<Hex, (Spokes, bool)> {
+        let dir = EdgeDirection::ALL_DIRECTIONS[0];
+        (0..len)
+            .map(|i| {
+                let mut spokes = Spokes::default();
+                if i > 0 {
+                    spokes.insert(-dir);
+                }
+                if i < len - 1 {
+                    spokes.insert(dir);
+                }
+                (Hex::ZERO + dir * i, (spokes, i < revealed))
+            })
+            .collect()
+    }
+
+    fn plan(tiles: &HashMap<Hex, (Spokes, bool)>, to: i32) -> Option<VecDeque<Hex>> {
+        let dir = EdgeDirection::ALL_DIRECTIONS[0];
+        Walk::plan(Hex::ZERO, Hex::ZERO + dir * to, |hex| {
+            tiles.get(&hex).copied()
+        })
+    }
+
+    #[test]
+    fn routes_through_revealed_tiles_and_one_step_past_them() {
+        let tiles = corridor(4, 2);
+        assert_eq!(plan(&tiles, 2).map(|route| route.len()), Some(2));
+        assert_eq!(plan(&tiles, 3), None, "tile 2 is unknown");
+    }
+
+    #[test]
+    fn refuses_to_cross_a_spoke_without_a_partner() {
+        let mut tiles = corridor(3, 2);
+        let dir = EdgeDirection::ALL_DIRECTIONS[0];
+        tiles.insert(Hex::ZERO + dir * 2, (Spokes::default(), false));
+        assert_eq!(plan(&tiles, 2), None);
     }
 }

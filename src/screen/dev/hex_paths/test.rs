@@ -3,7 +3,7 @@ use crate::prelude::*;
 use bevy::{
     ecs::schedule::ScheduleLabel, platform::collections::HashMap, transform::TransformPlugin,
 };
-use hexx::Hex;
+use hexx::{EdgeDirection, Hex};
 use q_test_harness::prelude::{AppExt as _, InputTestPlugin};
 use std::time::Duration;
 
@@ -23,9 +23,15 @@ impl Fixture {
             })
             .init_resource::<HexPathsView>()
             .init_resource::<PanelState>()
+            .add_message::<WalkTo>()
             .add_systems(
                 Update,
-                systems::spawn_board.run_if(resource_changed::<HexPathsSettings>),
+                (
+                    systems::spawn_board.run_if(resource_changed::<HexPathsSettings>),
+                    systems::plan_walk,
+                    systems::walk,
+                )
+                    .chain(),
             );
         app.finish();
         app.cleanup();
@@ -38,6 +44,32 @@ impl Fixture {
     fn tick(&mut self) {
         self.app
             .step(Duration::ZERO, [Update.intern(), PostUpdate.intern()]);
+    }
+
+    /// Requests a walk to `to`, then advances exactly one step duration.
+    fn walk_to(&mut self, to: Hex) {
+        self.app.world_mut().write_message(WalkTo(to));
+        let step = self.app.world().resource::<HexPathsView>().step_duration;
+        self.app.step(
+            Duration::from_secs_f32(step),
+            [Update.intern(), PostUpdate.intern()],
+        );
+    }
+
+    fn player(&mut self) -> Hex {
+        let world = self.app.world_mut();
+        world
+            .query_filtered::<&HexPos, With<HexPathsPlayer>>()
+            .single(world)
+            .unwrap()
+            .0
+    }
+
+    fn revealed(&self, hex: Hex) -> bool {
+        let world = self.app.world();
+        world
+            .get::<Revealed>(world.resource::<Board>().tiles[&hex])
+            .is_some()
     }
 
     fn layout(&self) -> HashMap<Hex, (TileKind, Spokes)> {
@@ -204,4 +236,35 @@ fn leaving_the_screen_restores_the_ui_cameras_clear_color() {
     assert!(!world.contains_resource::<UiCameraState>());
     assert!(!world.contains_resource::<Board>());
     assert!(!world.contains_resource::<BoardStats>());
+}
+
+#[test]
+fn walking_reveals_a_tile_on_arrival_and_ignores_unreachable_targets() {
+    let mut fixture = Fixture::new();
+    let layout = fixture.layout();
+    let spawn = fixture.player();
+
+    // Nodes start at least two steps away, behind unrevealed tiles.
+    let (&node, _) = layout
+        .iter()
+        .find(|(_, (kind, _))| matches!(kind, TileKind::Node(_)))
+        .unwrap();
+    fixture.walk_to(node);
+    assert_eq!(fixture.player(), spawn);
+
+    // A tile across one of spawn's crossings is one step into the unknown.
+    let next = EdgeDirection::ALL_DIRECTIONS
+        .into_iter()
+        .find_map(|dir| {
+            let (_, spokes) = layout.get(&spawn.neighbor(dir))?;
+            layout[&spawn]
+                .1
+                .crosses(*spokes, dir)
+                .then_some(spawn.neighbor(dir))
+        })
+        .unwrap();
+    assert!(!fixture.revealed(next));
+    fixture.walk_to(next);
+    assert_eq!(fixture.player(), next);
+    assert!(fixture.revealed(next));
 }
