@@ -51,13 +51,13 @@ impl Console {
                 height: vh(100),
                 ..Default::default()
             },
-            TextFont::default().with_font_size(FontSize::Rem(0.5)),
             children![(
                 Name::new("Console wrapper"),
                 Node {
                     width: percent(100),
                     height: percent(33),
                     top: percent(67),
+                    padding: UiRect::all(Val::Px(12.)),
                     ..Default::default()
                 },
                 children![(
@@ -69,6 +69,7 @@ impl Console {
                     },
                     BackgroundColor(LinearRgba::new(0., 0., 0., 0.8).into()),
                     VtUi::new(terminal),
+                    TextFont::default().with_font_size(FontSize::Px(12.)),
                 )],
             )],
         ));
