@@ -2,7 +2,6 @@ use super::{data::*, generate::BoardLayout, panel, screen::HexPathsScreen};
 use crate::prelude::*;
 use bevy::{
     camera::{ScalingMode, Viewport},
-    platform::collections::HashSet,
     window::PrimaryWindow,
 };
 use hexx::{EdgeDirection, Hex};
@@ -220,7 +219,7 @@ pub(super) fn draw_board(
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
     tiles: Query<(&HexPos, &TileKind, &Spokes, Has<Revealed>)>,
-    player: Query<(&Transform, &Walk), With<HexPathsPlayer>>,
+    player: Query<(&Transform, &Walk, &HexPos), With<HexPathsPlayer>>,
     mut gizmos: Gizmos<HexPathsGizmos>,
 ) {
     let Some(board) = board else {
@@ -229,23 +228,27 @@ pub(super) fn draw_board(
     for hex in board.cells() {
         gizmos.lineloop_2d(board.layout.hex_corners(hex), appearance.grid);
     }
-    let known: HashSet<Hex> = tiles
-        .iter()
-        .filter_map(|(position, _, _, revealed)| revealed.then_some(position.0))
-        .collect();
+    // Only tiles near the player are drawn, so paths walked earlier must be
+    // remembered. Nodes and spawn stay visible everywhere.
+    let near = |hex: Hex| {
+        player
+            .iter()
+            .any(|(_, _, at)| at.0.unsigned_distance_to(hex) <= view.sight_radius)
+    };
     for (position, kind, spokes, revealed) in &tiles {
         let hex = position.0;
         let center = board.layout.hex_to_world_pos(hex);
+        let visible = near(hex);
         // Like looking through the trees: you can see a tile is there, but
         // not where its paths go.
-        if !revealed && hex.all_neighbors().iter().any(|n| known.contains(n)) {
+        if visible && !revealed {
             let corners = board.layout.hex_corners(hex);
             gizmos.lineloop_2d(
                 corners.map(|corner| center + (corner - center) * appearance.seen_inset),
                 appearance.seen,
             );
         }
-        if revealed || view.show_paths {
+        if (visible && revealed) || view.show_paths {
             for dir in EdgeDirection::ALL_DIRECTIONS
                 .into_iter()
                 .filter(|&dir| spokes.has(dir))
@@ -291,7 +294,7 @@ pub(super) fn draw_board(
             TileKind::Path => {}
         }
     }
-    for (transform, walk) in &player {
+    for (transform, walk, _) in &player {
         let at = transform.translation.truncate();
         gizmos.linestrip_2d(
             std::iter::once(at).chain(

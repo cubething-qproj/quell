@@ -47,6 +47,12 @@ pub(super) fn scene(width: f32) -> impl Scene {
                     on(|change: On<ValueChange<f32>>, mut view: ResMut<HexPathsView>| {
                         view.step_duration = change.value;
                     })),
+                label_small("Sight radius (tiles)"),
+                (@FeathersSlider { @min: 0.0, @max: 10.0, @value: 2.0 }
+                    SightRadius SliderStep(1.0) SliderPrecision(0)
+                    on(|change: On<ValueChange<f32>>, mut view: ResMut<HexPathsView>| {
+                        view.sight_radius = change.value.round() as u32;
+                    })),
                 label("Generation"),
                 label_small("Seed (blank = random)"),
                 (@FeathersTextInputContainer Children [(
@@ -307,12 +313,13 @@ pub(super) fn sync_settings(
     }
 }
 
-/// Reflects view edits, including inspector changes, into checkboxes and slider.
+/// Reflects view edits, including inspector changes, into checkboxes and sliders.
 pub(super) fn sync_view(
     view: Res<HexPathsView>,
     mut commands: Commands,
     toggles: Query<(Entity, &ViewToggle, Has<Checked>)>,
     duration: Query<(Entity, &SliderValue), With<StepDuration>>,
+    sight: Query<(Entity, &SliderValue), With<SightRadius>>,
 ) {
     for (entity, toggle, checked) in &toggles {
         let value = match toggle {
@@ -332,6 +339,12 @@ pub(super) fn sync_view(
             commands
                 .entity(entity)
                 .insert(SliderValue(view.step_duration));
+        }
+    }
+    for (entity, slider) in &sight {
+        let radius = view.sight_radius as f32;
+        if slider.0 != radius {
+            commands.entity(entity).insert(SliderValue(radius));
         }
     }
 }

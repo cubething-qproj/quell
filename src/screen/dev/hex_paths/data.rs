@@ -89,6 +89,10 @@ pub enum ViewToggle {
 #[derive(Component, Default, Clone)]
 pub struct StepDuration;
 
+/// Slider controlling how far from the player tiles can be seen.
+#[derive(Component, Default, Clone)]
+pub struct SightRadius;
+
 /// What occupies a tile.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Reflect)]
 pub enum TileKind {
@@ -209,6 +213,9 @@ pub struct HexPathsView {
     pub show_paths: bool,
     pub show_node_traits: bool,
     pub step_duration: f32,
+    /// Tiles within this many steps of the player are drawn; revealed ones
+    /// with their paths. Nodes are always drawn.
+    pub sight_radius: u32,
 }
 
 impl Default for HexPathsView {
@@ -217,6 +224,7 @@ impl Default for HexPathsView {
             show_paths: false,
             show_node_traits: false,
             step_duration: 0.5,
+            sight_radius: 2,
         }
     }
 }
