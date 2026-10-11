@@ -13,13 +13,9 @@ impl Screen for HexPathsScreen {
             ScreenSchedule::Update,
             (
                 systems::spawn_board.run_if(resource_changed::<super::data::HexPathsSettings>),
-                systems::click_to_walk,
-                systems::plan_walk,
-                systems::walk,
                 systems::fit_camera,
                 systems::draw_board,
                 panel::sync_settings,
-                panel::sync_view,
                 panel::update_stats,
                 panel::resize_panel,
             )

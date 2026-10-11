@@ -3,9 +3,8 @@ use crate::prelude::*;
 use bevy::{
     feathers::{
         controls::{
-            FeathersButton, FeathersCheckbox, FeathersNumberInput, FeathersSlider,
-            FeathersTextInput, FeathersTextInputContainer, NumberFormat, NumberInputValue,
-            UpdateNumberInput,
+            FeathersButton, FeathersNumberInput, FeathersTextInput, FeathersTextInputContainer,
+            NumberFormat, NumberInputValue, UpdateNumberInput,
         },
         display::{label, label_small},
         theme::ThemeBackgroundColor,
@@ -13,8 +12,7 @@ use bevy::{
     },
     input_focus::{InputFocus, tab_navigation::TabGroup},
     text::{EditableText, EditableTextFilter, TextEdit, TextEditChange},
-    ui::Checked,
-    ui_widgets::{Activate, ScrollArea, SliderPrecision, SliderStep, SliderValue, ValueChange},
+    ui_widgets::{Activate, ScrollArea, ValueChange},
 };
 
 /// Scrollable debug panel, with typed controls for all generation settings.
@@ -38,28 +36,7 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 (@FeathersButton { @caption: bsn! { label("Regenerate") } }
                     on(|_: On<Activate>, mut settings: ResMut<HexPathsSettings>| { settings.set_changed(); })),
                 (label_small("") StatsText),
-                toggle("Show all paths", ViewToggle::Paths),
-                toggle("Show node traits", ViewToggle::NodeTraits),
-                label_small("Key: gold | NPC: blue | Fear: red | Empty: violet"),
-                label_small("Walking step duration (seconds)"),
-                (@FeathersSlider { @min: 0.05, @max: 2.0, @value: 0.5 }
-                    StepDuration SliderStep(0.05) SliderPrecision(2)
-                    on(|change: On<ValueChange<f32>>, mut view: ResMut<HexPathsView>| {
-                        view.step_duration = change.value;
-                    })),
-                label_small("Sight radius (tiles)"),
-                (@FeathersSlider { @min: 0.0, @max: 10.0, @value: 2.0 }
-                    SightRadius SliderStep(1.0) SliderPrecision(0)
-                    on(|change: On<ValueChange<f32>>, mut view: ResMut<HexPathsView>| {
-                        view.sight_radius = change.value.round() as u32;
-                    })),
                 label("Generation"),
-                (Node { column_gap: px(4) } Children [
-                    (@FeathersButton { @caption: bsn! { label("Backbone") } }
-                        on(|_: On<Activate>, mut s: ResMut<HexPathsSettings>| { s.generator = GeneratorKind::Backbone; })),
-                    (@FeathersButton { @caption: bsn! { label("Growing tree") } }
-                        on(|_: On<Activate>, mut s: ResMut<HexPathsSettings>| { s.generator = GeneratorKind::GrowingTree; })),
-                ]),
                 label_small("Seed (blank = random)"),
                 (@FeathersTextInputContainer Children [(
                     @FeathersTextInput { @max_characters: 20usize }
@@ -72,52 +49,6 @@ pub(super) fn scene(width: f32) -> impl Scene {
                     })),
                 integer("Columns", |s| s.columns, |s, v| s.columns = v),
                 integer("Rows", |s| s.rows, |s, v| s.rows = v),
-                (label_small("") SpawnText),
-                (Node { column_gap: px(4) } Children [
-                    (@FeathersButton { @caption: bsn! { label("Center") } }
-                        on(|_: On<Activate>, mut s: ResMut<HexPathsSettings>| { s.spawn = SpawnPlacement::Center; })),
-                    (@FeathersButton { @caption: bsn! { label("Random") } }
-                        on(|_: On<Activate>, mut s: ResMut<HexPathsSettings>| { s.spawn = SpawnPlacement::Random; })),
-                    (@FeathersButton { @caption: bsn! { label("Fixed") } }
-                        on(|_: On<Activate>, mut s: ResMut<HexPathsSettings>| {
-                            s.spawn = SpawnPlacement::Fixed { column: s.columns / 2, row: s.rows / 2 };
-                        })),
-                ]),
-                integer("Fixed spawn column", |s| match s.spawn {
-                    SpawnPlacement::Fixed { column, .. } => column, _ => s.columns / 2,
-                }, |s, column| {
-                    let row = match s.spawn { SpawnPlacement::Fixed { row, .. } => row, _ => s.rows / 2 };
-                    s.spawn = SpawnPlacement::Fixed { column, row };
-                }),
-                integer("Fixed spawn row", |s| match s.spawn {
-                    SpawnPlacement::Fixed { row, .. } => row, _ => s.rows / 2,
-                }, |s, row| {
-                    let column = match s.spawn { SpawnPlacement::Fixed { column, .. } => column, _ => s.columns / 2 };
-                    s.spawn = SpawnPlacement::Fixed { column, row };
-                }),
-                integer("Key locations", |s| s.deck.key_locations, |s, v| s.deck.key_locations = v),
-                integer("NPCs", |s| s.deck.npcs, |s, v| s.deck.npcs = v),
-                integer("Fear events", |s| s.deck.fears, |s, v| s.deck.fears = v),
-                integer("Empty nodes", |s| s.deck.empty, |s, v| s.deck.empty = v),
-                integer("Node spacing", |s| s.min_node_distance, |s, v| s.min_node_distance = v),
-                integer("Spawn spacing", |s| s.min_spawn_distance, |s, v| s.min_spawn_distance = v),
-                integer("Spawn spokes minimum", |s| s.min_spawn_spokes, |s, v| s.min_spawn_spokes = v),
-                integer("Spawn spokes maximum", |s| s.max_spawn_spokes, |s, v| s.max_spawn_spokes = v),
-                decimal("Noise (0–10)", |s| s.noise, |s, v| s.noise = v),
-                decimal("Sharp shape weight (0–10)", |s| s.shape_weights.sharp, |s, v| s.shape_weights.sharp = v),
-                decimal("Wide shape weight (0–10)", |s| s.shape_weights.wide, |s, v| s.shape_weights.wide = v),
-                decimal("Straight shape weight (0–10)", |s| s.shape_weights.straight, |s, v| s.shape_weights.straight = v),
-                decimal("Junction chance (0–1)", |s| s.junction_chance, |s, v| s.junction_chance = v),
-                integer("Branch length minimum", |s| s.min_branch_length, |s, v| s.min_branch_length = v),
-                integer("Branch length maximum", |s| s.max_branch_length, |s, v| s.max_branch_length = v),
-                decimal("Branch join chance (0–1)", |s| s.branch_join_chance, |s, v| s.branch_join_chance = v),
-                integer("Target path tiles", |s| s.target_paths, |s, v| s.target_paths = v),
-                decimal("Target tolerance (0–1)", |s| s.target_tolerance, |s, v| s.target_tolerance = v),
-                flag("No dead ends", |s| s.no_dead_ends, |s, v| s.no_dead_ends = v),
-                flag("Every node on a loop", |s| s.node_loops, |s, v| s.node_loops = v),
-                integer("Minimum loop length", |s| s.min_loop, |s, v| s.min_loop = v),
-                decimal("Growing tree newest bias (0–1)", |s| s.newest_bias, |s, v| s.newest_bias = v),
-                decimal("Growing tree share grown before loops (0–1)", |s| s.loop_growth, |s, v| s.loop_growth = v),
             ]
         )]
     }
@@ -140,45 +71,6 @@ fn integer(
     }
 }
 
-/// Row for a floating-point setting, committed on Enter or focus loss.
-fn decimal(
-    caption: &'static str,
-    read: fn(&HexPathsSettings) -> f32,
-    write: fn(&mut HexPathsSettings, f32),
-) -> impl Scene {
-    bsn! {
-        Node { align_items: AlignItems::Center, column_gap: px(8) }
-        Children [
-            (label_small(caption) Node { width: percent(65) }),
-            (@FeathersNumberInput
-                template(move |_| Ok(NumberSetting::<f32> { read, write }))
-                on(set_decimal)),
-        ]
-    }
-}
-
-/// Checkbox for a boolean generation setting.
-fn flag(
-    caption: &'static str,
-    read: fn(&HexPathsSettings) -> bool,
-    write: fn(&mut HexPathsSettings, bool),
-) -> impl Scene {
-    bsn! {
-        @FeathersCheckbox { @caption: bsn! { label_small(caption) } }
-        template(move |_| Ok(FlagSetting { read, write }))
-        on(set_flag)
-    }
-}
-
-/// Checkbox for a view option, independent of generation.
-fn toggle(caption: &'static str, option: ViewToggle) -> impl Scene {
-    bsn! {
-        @FeathersCheckbox { @caption: bsn! { label_small(caption) } }
-        template(move |_| Ok(option))
-        on(set_toggle)
-    }
-}
-
 /// Applies an integer input only when its final value fits the setting's type.
 fn set_integer(
     change: On<ValueChange<i64>>,
@@ -191,21 +83,6 @@ fn set_integer(
     {
         let mut next = settings.clone();
         (field.write)(&mut next, value);
-        settings.set_if_neq(next);
-    }
-}
-
-/// Applies a final decimal input; the generator reports invalid settings.
-fn set_decimal(
-    change: On<ValueChange<f32>>,
-    fields: Query<&NumberSetting<f32>>,
-    mut settings: ResMut<HexPathsSettings>,
-) {
-    if change.is_final
-        && let Ok(field) = fields.get(change.source)
-    {
-        let mut next = settings.clone();
-        (field.write)(&mut next, change.value);
         settings.set_if_neq(next);
     }
 }
@@ -237,43 +114,13 @@ fn set_seed(
     }
 }
 
-/// Applies a checkbox to its generation setting.
-fn set_flag(
-    change: On<ValueChange<bool>>,
-    fields: Query<&FlagSetting>,
-    mut settings: ResMut<HexPathsSettings>,
-) {
-    if let Ok(field) = fields.get(change.source) {
-        let mut next = settings.clone();
-        (field.write)(&mut next, change.value);
-        settings.set_if_neq(next);
-    }
-}
-
-/// Applies a checkbox to its view option.
-fn set_toggle(
-    change: On<ValueChange<bool>>,
-    toggles: Query<&ViewToggle>,
-    mut view: ResMut<HexPathsView>,
-) {
-    if let Ok(toggle) = toggles.get(change.source) {
-        match toggle {
-            ViewToggle::Paths => view.show_paths = change.value,
-            ViewToggle::NodeTraits => view.show_node_traits = change.value,
-        }
-    }
-}
-
 /// Reflects settings edits into the panel without overwriting focused seed text.
 pub(super) fn sync_settings(
     settings: Res<HexPathsSettings>,
     focus: Res<InputFocus>,
     mut commands: Commands,
     integers: Query<(Entity, Ref<NumberSetting<u32>>)>,
-    decimals: Query<(Entity, Ref<NumberSetting<f32>>)>,
-    flags: Query<(Entity, &FlagSetting, Has<Checked>)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
-    mut spawn_text: Query<&mut Text, With<SpawnText>>,
 ) {
     for (entity, field) in &integers {
         if settings.is_changed() || field.is_added() {
@@ -281,24 +128,6 @@ pub(super) fn sync_settings(
                 entity,
                 value: NumberInputValue::I64((field.read)(&settings) as i64),
             });
-        }
-    }
-    for (entity, field) in &decimals {
-        if settings.is_changed() || field.is_added() {
-            commands.trigger(UpdateNumberInput {
-                entity,
-                value: NumberInputValue::F32((field.read)(&settings)),
-            });
-        }
-    }
-    for (entity, field, checked) in &flags {
-        let value = (field.read)(&settings);
-        if value != checked {
-            if value {
-                commands.entity(entity).insert(Checked);
-            } else {
-                commands.entity(entity).remove::<Checked>();
-            }
         }
     }
     for (entity, mut input, marker) in &mut seeds {
@@ -313,77 +142,20 @@ pub(super) fn sync_settings(
             }
         }
     }
-    for mut text in &mut spawn_text {
-        let value = format!("Spawn: {:?}", settings.spawn);
-        if text.0 != value {
-            text.0 = value;
-        }
-    }
 }
 
-/// Reflects view edits, including inspector changes, into checkboxes and sliders.
-pub(super) fn sync_view(
-    view: Res<HexPathsView>,
-    mut commands: Commands,
-    toggles: Query<(Entity, &ViewToggle, Has<Checked>)>,
-    duration: Query<(Entity, &SliderValue), With<StepDuration>>,
-    sight: Query<(Entity, &SliderValue), With<SightRadius>>,
-) {
-    for (entity, toggle, checked) in &toggles {
-        let value = match toggle {
-            ViewToggle::Paths => view.show_paths,
-            ViewToggle::NodeTraits => view.show_node_traits,
-        };
-        if value != checked {
-            if value {
-                commands.entity(entity).insert(Checked);
-            } else {
-                commands.entity(entity).remove::<Checked>();
-            }
-        }
-    }
-    for (entity, slider) in &duration {
-        if slider.0 != view.step_duration {
-            commands
-                .entity(entity)
-                .insert(SliderValue(view.step_duration));
-        }
-    }
-    for (entity, slider) in &sight {
-        let radius = view.sight_radius as f32;
-        if slider.0 != radius {
-            commands.entity(entity).insert(SliderValue(radius));
-        }
-    }
-}
-
-/// Displays the actual distribution and preserves useful errors while editing.
+/// Displays the seed and preserves useful errors while editing.
 pub(super) fn update_stats(
     stats: Option<Res<BoardStats>>,
-    settings: Res<HexPathsSettings>,
     panel: Res<PanelState>,
     mut texts: Query<&mut Text, With<StatsText>>,
 ) {
     let Some(stats) = stats else {
         return;
     };
-    let window = settings.target_window();
-    let mut value = format!(
-        "Generator: {:?}\nSeed: {}\nAttempts: {}\nPath tiles: {} (target {}–{})\n2 spokes: {} | 3 spokes: {}\nSharp: {} | Wide: {} | Straight: {}",
-        settings.generator,
-        stats.seed,
-        stats.attempts,
-        stats.two_spoke + stats.three_spoke,
-        window.start(),
-        window.end(),
-        stats.two_spoke,
-        stats.three_spoke,
-        stats.shapes[0],
-        stats.shapes[1],
-        stats.shapes[2]
-    );
+    let mut value = format!("Seed: {}", stats.seed);
     if let Some(error) = &stats.error {
-        value.push_str(&format!("\nGeneration error: {error:?}"));
+        value.push_str(&format!("\nGeneration error: {error}"));
     }
     if let Some(error) = panel.seed_error {
         value.push_str(&format!("\n{error}"));

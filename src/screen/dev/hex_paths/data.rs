@@ -1,27 +1,7 @@
-use super::generate::{BoardGenError, BoardLayout};
 use crate::prelude::*;
-use bevy::platform::collections::HashMap;
-use hexx::{EdgeDirection, Hex, HexLayout, HexOrientation, OffsetHexMode, algorithms::a_star};
-use rand::{Rng, RngExt};
-use std::collections::VecDeque;
+use hexx::{Hex, HexLayout, HexOrientation, OffsetHexMode};
 
 const OFFSET_MODE: OffsetHexMode = OffsetHexMode::Even;
-
-/// Position of a tile or the player in the hex grid.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HexPos(pub Hex);
-
-/// A tile whose paths and node trait have been revealed.
-#[derive(Component)]
-pub struct Revealed;
-
-/// Player token for the hex prototype.
-#[derive(Component)]
-pub struct HexPathsPlayer;
-
-/// Request for the player to walk to a tile, e.g. from a click.
-#[derive(Message, Debug, Clone, Copy)]
-pub struct WalkTo(pub Hex);
 
 /// Root of the entities replaced when the board regenerates.
 #[derive(Component)]
@@ -42,13 +22,9 @@ pub struct UiCameraState {
 #[derive(Default, GizmoConfigGroup, Reflect)]
 pub struct HexPathsGizmos;
 
-/// Text displaying the generated seed, distribution, and errors.
+/// Text displaying the generated seed and errors.
 #[derive(Component, Default, Clone)]
 pub struct StatsText;
-
-/// Text identifying the current spawn placement.
-#[derive(Component, Default, Clone)]
-pub struct SpawnText;
 
 /// Text input for a full-width unsigned seed; blank means random.
 #[derive(Component, Default, Clone)]
@@ -71,209 +47,13 @@ pub struct NumberSetting<T: Send + Sync + 'static> {
     pub write: fn(&mut HexPathsSettings, T),
 }
 
-/// Typed binding between a checkbox and a boolean generation setting.
-#[derive(Component, Clone, Copy)]
-pub struct FlagSetting {
-    pub read: fn(&HexPathsSettings) -> bool,
-    pub write: fn(&mut HexPathsSettings, bool),
-}
-
-/// The play-time visibility option controlled by a checkbox.
-#[derive(Component, Clone, Copy)]
-pub enum ViewToggle {
-    Paths,
-    NodeTraits,
-}
-
-/// Slider controlling the duration of a walking step.
-#[derive(Component, Default, Clone)]
-pub struct StepDuration;
-
-/// Slider controlling how far from the player tiles can be seen.
-#[derive(Component, Default, Clone)]
-pub struct SightRadius;
-
-/// What occupies a tile.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Reflect)]
-pub enum TileKind {
-    Spawn,
-    Node(NodeTrait),
-    Path,
-}
-
-/// What a node reveals when the player reaches it. Dealt from the [`Deck`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
-pub enum NodeTrait {
-    KeyLocation,
-    Npc,
-    Fear,
-    /// A regular node with no encounter underneath it.
-    Empty,
-}
-
-/// How the path network is generated.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Reflect)]
-pub enum GeneratorKind {
-    /// Noisy A* routes join the nodes; branches then spend the remaining
-    /// path budget.
-    #[default]
-    Backbone,
-    /// A tree grows tile by tile from spawn; nodes then claim its dead ends.
-    GrowingTree,
-}
-
-/// Where the spawn tile goes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
-pub enum SpawnPlacement {
-    Center,
-    Random,
-    /// Offset coordinates.
-    Fixed {
-        column: u32,
-        row: u32,
-    },
-}
-
-/// Edge connections of a tile, one bit per [`EdgeDirection`].
-#[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Reflect)]
-pub struct Spokes(u8);
-
-impl Spokes {
-    /// Whether there is a spoke on the edge in `dir`.
-    pub fn has(self, dir: EdgeDirection) -> bool {
-        self.0 & (1 << dir.index()) != 0
-    }
-
-    /// Adds a spoke on the edge in `dir`.
-    pub fn insert(&mut self, dir: EdgeDirection) {
-        self.0 |= 1 << dir.index();
-    }
-
-    /// Number of spokes.
-    pub fn count(self) -> u32 {
-        self.0.count_ones()
-    }
-
-    /// Removes the spoke on the edge in `dir`.
-    pub fn remove(&mut self, dir: EdgeDirection) {
-        self.0 &= !(1 << dir.index());
-    }
-
-    /// Directions that have a spoke.
-    pub fn directions(self) -> impl Iterator<Item = EdgeDirection> {
-        EdgeDirection::ALL_DIRECTIONS
-            .into_iter()
-            .filter(move |&dir| self.has(dir))
-    }
-
-    /// Moving from a tile with these spokes to its neighbor in `dir` is legal
-    /// iff both tiles have a spoke on the shared edge.
-    pub fn crosses(self, to: Spokes, dir: EdgeDirection) -> bool {
-        self.has(dir) && to.has(-dir)
-    }
-}
-
-/// The player's remaining route. `progress` is the fraction of the step
-/// toward the route's first tile; arriving there reveals it.
-#[derive(Component, Debug, Default)]
-pub struct Walk {
-    pub route: VecDeque<Hex>,
-    pub progress: f32,
-}
-
-impl Walk {
-    /// Shortest route from `from` to `to`, excluding `from`, that crosses only
-    /// into tiles the player knows: revealed tiles, plus `to` itself one step
-    /// past them. `tile` gives a cell's spokes and whether it is revealed.
-    /// `from` counts as known, since the player is on it or entering it.
-    pub fn plan(
-        from: Hex,
-        to: Hex,
-        tile: impl Fn(Hex) -> Option<(Spokes, bool)>,
-    ) -> Option<VecDeque<Hex>> {
-        let path = a_star(from, to, |a, b| {
-            // hexx probes the start and end with themselves.
-            if a == b {
-                return Some(0);
-            }
-            let dir = a.neighbor_direction(b)?;
-            let ((leaving, a_known), (entering, b_known)) = (tile(a)?, tile(b)?);
-            ((a_known || a == from) && (b_known || b == to) && leaving.crosses(entering, dir))
-                .then_some(1)
-        })?;
-        Some(path.into_iter().skip(1).collect())
-    }
-}
-
-/// Shape of a 2-spoke tile, by the angle between its spokes.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
-pub enum PathShape {
-    /// 60°
-    Sharp,
-    /// 120°
-    Wide,
-    /// 180°
-    Straight,
-}
-
-impl PathShape {
-    /// Shape of the tile entered moving in `entered` and left moving in
-    /// `exited`. `None` if `exited` turns straight back.
-    pub fn of_turn(entered: EdgeDirection, exited: EdgeDirection) -> Option<Self> {
-        match (exited.index() + 6 - entered.index()) % 6 {
-            0 => Some(Self::Straight),
-            1 | 5 => Some(Self::Wide),
-            2 | 4 => Some(Self::Sharp),
-            _ => None,
-        }
-    }
-}
-
-/// Visibility and walking settings. Editing these never regenerates a board.
-#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
-#[reflect(Resource)]
-pub struct HexPathsView {
-    pub show_paths: bool,
-    pub show_node_traits: bool,
-    pub step_duration: f32,
-    /// Tiles within this many steps of the player are drawn; revealed ones
-    /// with their paths. Nodes are always drawn.
-    pub sight_radius: u32,
-}
-
-impl Default for HexPathsView {
-    fn default() -> Self {
-        Self {
-            show_paths: false,
-            show_node_traits: false,
-            step_duration: 0.5,
-            sight_radius: 2,
-        }
-    }
-}
-
 /// Sizes and colors for the board preview and its debug panel.
 #[derive(Resource, Debug, Clone, Reflect)]
 #[reflect(Resource)]
 pub struct HexPathsAppearance {
     pub panel_width: f32,
     pub board_padding: f32,
-    pub marker_radius: f32,
-    pub dead_end_size: f32,
-    /// Inset of a seen tile's outline, as a fraction of the hex radius.
-    pub seen_inset: f32,
     pub grid: Color,
-    /// Unrevealed tiles next to a revealed one: visible, but not their paths.
-    pub seen: Color,
-    pub route: Color,
-    pub paths: Color,
-    pub spawn: Color,
-    pub player: Color,
-    pub hidden_node: Color,
-    pub key_location: Color,
-    pub npc: Color,
-    pub fear: Color,
-    pub empty: Color,
 }
 
 impl Default for HexPathsAppearance {
@@ -281,40 +61,14 @@ impl Default for HexPathsAppearance {
         Self {
             panel_width: 340.,
             board_padding: 1.,
-            marker_radius: 0.22,
-            dead_end_size: 0.055,
-            seen_inset: 0.75,
             grid: Color::srgb(0.25, 0.28, 0.32),
-            seen: Color::srgb(0.45, 0.5, 0.56),
-            route: Color::srgb(1., 0.92, 0.55),
-            paths: Color::srgb(0.75, 0.8, 0.85),
-            spawn: Color::srgb(0.3, 0.9, 0.5),
-            player: Color::WHITE,
-            hidden_node: Color::srgb(0.6, 0.6, 0.6),
-            key_location: Color::srgb(1., 0.8, 0.2),
-            npc: Color::srgb(0.3, 0.65, 1.),
-            fear: Color::srgb(0.95, 0.3, 0.4),
-            empty: Color::srgb(0.65, 0.45, 0.8),
         }
     }
 }
 
-impl HexPathsAppearance {
-    /// Color identifying a revealed node's trait.
-    pub fn node_color(&self, card: NodeTrait) -> Color {
-        match card {
-            NodeTrait::KeyLocation => self.key_location,
-            NodeTrait::Npc => self.npc,
-            NodeTrait::Fear => self.fear,
-            NodeTrait::Empty => self.empty,
-        }
-    }
-}
-
-/// Play-time tile index and geometry, with the bounds of the generated grid.
+/// Play-time geometry, with the bounds of the generated grid.
 #[derive(Resource)]
 pub struct Board {
-    pub tiles: HashMap<Hex, Entity>,
     pub layout: HexLayout,
     pub size: Vec2,
     pub columns: u32,
@@ -334,7 +88,6 @@ impl Board {
             );
         layout.origin = -(min + max) / 2.;
         Self {
-            tiles: HashMap::default(),
             layout,
             size: max - min,
             columns: settings.columns,
@@ -356,106 +109,11 @@ impl Board {
     }
 }
 
-/// Seed and measured distribution from the latest generation attempt.
+/// Seed and error from the latest generation attempt.
 #[derive(Resource, Default)]
 pub struct BoardStats {
     pub seed: u64,
-    pub attempts: u32,
-    pub two_spoke: u32,
-    pub three_spoke: u32,
-    /// Sharp, wide, and straight two-spoke path counts.
-    pub shapes: [u32; 3],
-    pub error: Option<BoardGenError>,
-}
-
-impl BoardStats {
-    /// Measures the generated path tiles without counting nodes or spawn.
-    pub fn from_layout(seed: u64, layout: &BoardLayout) -> Self {
-        let mut stats = Self {
-            seed,
-            attempts: layout.attempts,
-            ..default()
-        };
-        for tile in layout
-            .tiles
-            .values()
-            .filter(|tile| tile.kind == TileKind::Path)
-        {
-            match tile.spokes.count() {
-                2 => {
-                    stats.two_spoke += 1;
-                    let mut directions = EdgeDirection::ALL_DIRECTIONS
-                        .into_iter()
-                        .filter(|&dir| tile.spokes.has(dir));
-                    let shape =
-                        PathShape::of_turn(-directions.next().unwrap(), directions.next().unwrap())
-                            .expect("distinct spokes have a path shape");
-                    stats.shapes[match shape {
-                        PathShape::Sharp => 0,
-                        PathShape::Wide => 1,
-                        PathShape::Straight => 2,
-                    }] += 1;
-                }
-                3 => stats.three_spoke += 1,
-                _ => {}
-            }
-        }
-        stats
-    }
-}
-
-/// Relative preference for each [`PathShape`]. Zero forbids a shape.
-#[derive(Debug, Clone, Copy, PartialEq, Reflect)]
-pub struct ShapeWeights {
-    pub sharp: f32,
-    pub wide: f32,
-    pub straight: f32,
-}
-
-impl ShapeWeights {
-    /// Relative preference for `shape`.
-    pub fn get(&self, shape: PathShape) -> f32 {
-        match shape {
-            PathShape::Sharp => self.sharp,
-            PathShape::Wide => self.wide,
-            PathShape::Straight => self.straight,
-        }
-    }
-
-    fn max(&self) -> f32 {
-        self.sharp.max(self.wide).max(self.straight)
-    }
-
-    /// Extra path cost for bending into `shape`: zero for the most preferred
-    /// shape, `None` for a shape with zero weight.
-    pub fn turn_cost(&self, shape: PathShape) -> Option<f32> {
-        let weight = self.get(shape);
-        (weight > 0.).then(|| self.max() / weight - 1.)
-    }
-}
-
-/// Node trait counts. Node count is the deck size.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Reflect)]
-pub struct Deck {
-    pub key_locations: u32,
-    pub npcs: u32,
-    pub fears: u32,
-    pub empty: u32,
-}
-
-impl Deck {
-    /// Every card in the deck, unshuffled.
-    pub fn cards(&self) -> Vec<NodeTrait> {
-        [
-            (NodeTrait::KeyLocation, self.key_locations),
-            (NodeTrait::Npc, self.npcs),
-            (NodeTrait::Fear, self.fears),
-            (NodeTrait::Empty, self.empty),
-        ]
-        .into_iter()
-        .flat_map(|(card, count)| std::iter::repeat_n(card, count as usize))
-        .collect()
-    }
+    pub error: Option<&'static str>,
 }
 
 /// Board generation settings. Changing these regenerates the board.
@@ -466,42 +124,6 @@ pub struct HexPathsSettings {
     pub rows: u32,
     /// `None` draws a fresh seed every generation.
     pub seed: Option<u64>,
-    pub spawn: SpawnPlacement,
-    pub generator: GeneratorKind,
-    pub deck: Deck,
-    pub min_node_distance: u32,
-    pub min_spawn_distance: u32,
-    pub min_spawn_spokes: u32,
-    pub max_spawn_spokes: u32,
-    /// Amplitude of the per-cell random path cost. 0 gives shortest paths.
-    pub noise: f32,
-    pub shape_weights: ShapeWeights,
-    /// Chance a 2-spoke path tile is upgraded to 3 spokes.
-    pub junction_chance: f32,
-    pub min_branch_length: u32,
-    pub max_branch_length: u32,
-    /// Chance a branch connects into an adjacent tile instead of dead-ending.
-    /// Ignored with `no_dead_ends`, where every branch must connect.
-    pub branch_join_chance: f32,
-    /// Path tiles to aim for; each board draws its target uniformly from
-    /// `target_paths ± target_tolerance` (a fraction).
-    pub target_paths: u32,
-    pub target_tolerance: f32,
-    /// Every spoke must meet a matching spoke: no dead ends, nothing pointing
-    /// off the map. Nodes may still end a path.
-    pub no_dead_ends: bool,
-    /// Shortest loop, in tiles around, that a branch closing with
-    /// `no_dead_ends`, or a node's second route, may form.
-    pub min_loop: u32,
-    /// Every node sits on a loop: it has two separate ways out.
-    pub node_loops: bool,
-    /// Growing tree only: chance to extend the newest dead end rather than a
-    /// random one. 1 gives long winding corridors; 0 gives bushy networks.
-    pub newest_bias: f32,
-    /// Growing tree with node loops: share of the target grown as a tree
-    /// before node loops and branches add the rest. Too little leaves no room
-    /// to space the nodes; too much overshoots the window.
-    pub loop_growth: f32,
 }
 
 impl Default for HexPathsSettings {
@@ -510,35 +132,6 @@ impl Default for HexPathsSettings {
             columns: 10,
             rows: 8,
             seed: None,
-            spawn: SpawnPlacement::Center,
-            generator: GeneratorKind::Backbone,
-            deck: Deck {
-                key_locations: 1,
-                npcs: 1,
-                fears: 1,
-                empty: 3,
-            },
-            min_node_distance: 2,
-            min_spawn_distance: 3,
-            min_spawn_spokes: 2,
-            max_spawn_spokes: 3,
-            noise: 2.,
-            shape_weights: ShapeWeights {
-                sharp: 1.,
-                wide: 1.,
-                straight: 1.,
-            },
-            junction_chance: 0.25,
-            min_branch_length: 3,
-            max_branch_length: 8,
-            branch_join_chance: 0.3,
-            target_paths: 30,
-            target_tolerance: 0.1,
-            no_dead_ends: true,
-            min_loop: 8,
-            node_loops: true,
-            newest_bias: 0.5,
-            loop_growth: 0.8,
         }
     }
 }
@@ -553,128 +146,19 @@ impl HexPathsSettings {
         )
     }
 
-    /// Whether `hex` is inside the grid.
-    pub fn contains(&self, hex: Hex) -> bool {
-        let [column, row] = hex.to_offset_coordinates(OFFSET_MODE, HexOrientation::Flat);
-        (0..self.columns as i32).contains(&column) && (0..self.rows as i32).contains(&row)
-    }
-
     /// All grid cells, column by column.
     pub fn cells(&self) -> impl Iterator<Item = Hex> + '_ {
         (0..self.columns)
             .flat_map(move |column| (0..self.rows).map(move |row| self.cell(column, row)))
     }
 
-    /// The spawn cell according to [`Self::spawn`].
-    pub fn spawn_cell(&self, rng: &mut impl Rng) -> Hex {
-        match self.spawn {
-            SpawnPlacement::Center => self.cell(self.columns / 2, self.rows / 2),
-            SpawnPlacement::Random => self.cell(
-                rng.random_range(0..self.columns),
-                rng.random_range(0..self.rows),
-            ),
-            SpawnPlacement::Fixed { column, row } => self.cell(column, row),
-        }
-    }
-
-    /// Acceptable path tile counts: `target_paths ± target_tolerance`.
-    pub fn target_window(&self) -> std::ops::RangeInclusive<u32> {
-        let target = self.target_paths as f32;
-        let low = (target * (1. - self.target_tolerance)).ceil().max(0.) as u32;
-        let high = (target * (1. + self.target_tolerance)).floor().max(0.) as u32;
-        low..=high
-    }
-
     /// Validates invariants on HexPathsSettings. Returns the first violated
     /// invariant.
     pub fn validate(&self) -> Result<(), &'static str> {
-        let weights = self.shape_weights;
-        let chance = 0. ..=1.;
-        [
-            (self.columns > 0 && self.rows > 0, "grid must not be empty"),
-            (
-                !matches!(self.spawn, SpawnPlacement::Fixed { column, row }
-                    if column >= self.columns || row >= self.rows),
-                "fixed spawn must be inside the grid",
-            ),
-            (
-                self.min_spawn_spokes <= self.max_spawn_spokes && self.max_spawn_spokes <= 6,
-                "spawn spokes must satisfy min <= max <= 6",
-            ),
-            (
-                self.min_branch_length <= self.max_branch_length,
-                "branch length must satisfy min <= max",
-            ),
-            (
-                (0. ..=10.).contains(&self.noise),
-                "noise must be within 0..=10",
-            ),
-            (
-                [weights.sharp, weights.wide, weights.straight]
-                    .iter()
-                    .all(|w| (0. ..=10.).contains(w))
-                    && weights.max() > 0.,
-                "shape weights must be within 0..=10 with at least one positive",
-            ),
-            (
-                chance.contains(&self.junction_chance)
-                    && chance.contains(&self.branch_join_chance)
-                    && chance.contains(&self.newest_bias)
-                    && chance.contains(&self.loop_growth),
-                "chances must be within 0..=1",
-            ),
-            (
-                (0. ..1.).contains(&self.target_tolerance) && !self.target_window().is_empty(),
-                "target tolerance must be within 0..1 and leave a non-empty window",
-            ),
-        ]
-        .into_iter()
-        .find(|(ok, _)| !ok)
-        .map_or(Ok(()), |(_, reason)| Err(reason))
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A straight corridor of `len` tiles heading in direction 0, with mutual
-    /// spokes between consecutive tiles. The first `revealed` are revealed.
-    fn corridor(len: i32, revealed: i32) -> HashMap<Hex, (Spokes, bool)> {
-        let dir = EdgeDirection::ALL_DIRECTIONS[0];
-        (0..len)
-            .map(|i| {
-                let mut spokes = Spokes::default();
-                if i > 0 {
-                    spokes.insert(-dir);
-                }
-                if i < len - 1 {
-                    spokes.insert(dir);
-                }
-                (Hex::ZERO + dir * i, (spokes, i < revealed))
-            })
-            .collect()
-    }
-
-    fn plan(tiles: &HashMap<Hex, (Spokes, bool)>, to: i32) -> Option<VecDeque<Hex>> {
-        let dir = EdgeDirection::ALL_DIRECTIONS[0];
-        Walk::plan(Hex::ZERO, Hex::ZERO + dir * to, |hex| {
-            tiles.get(&hex).copied()
-        })
-    }
-
-    #[test]
-    fn routes_through_revealed_tiles_and_one_step_past_them() {
-        let tiles = corridor(4, 2);
-        assert_eq!(plan(&tiles, 2).map(|route| route.len()), Some(2));
-        assert_eq!(plan(&tiles, 3), None, "tile 2 is unknown");
-    }
-
-    #[test]
-    fn refuses_to_cross_a_spoke_without_a_partner() {
-        let mut tiles = corridor(3, 2);
-        let dir = EdgeDirection::ALL_DIRECTIONS[0];
-        tiles.insert(Hex::ZERO + dir * 2, (Spokes::default(), false));
-        assert_eq!(plan(&tiles, 2), None);
+        if self.columns > 0 && self.rows > 0 {
+            Ok(())
+        } else {
+            Err("grid must not be empty")
+        }
     }
 }
