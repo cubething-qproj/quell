@@ -1,4 +1,4 @@
-use super::{panel, systems};
+use super::{data::*, panel, systems};
 use crate::prelude::*;
 
 /// Dev screen for inspecting hex path generation.
@@ -12,8 +12,15 @@ impl Screen for HexPathsScreen {
         builder.add_systems(
             ScreenSchedule::Update,
             (
-                systems::spawn_board.run_if(resource_changed::<super::data::HexPathsSettings>),
-                systems::fit_camera,
+                systems::spawn_board.run_if(
+                    resource_changed::<HexPathsSettings>.or_else(resource_changed::<HexTerrainTuning>),
+                ),
+                systems::spawn_surface.run_if(
+                    resource_exists_and_changed::<Board>.or_else(resource_changed::<HexPathsAppearance>),
+                ),
+                systems::fit_viewport,
+                systems::aim_camera.run_if(resource_exists_and_changed::<Board>),
+                systems::orbit_camera,
                 systems::draw_board,
                 panel::sync_settings,
                 panel::update_stats,

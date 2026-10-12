@@ -49,6 +49,11 @@ pub(super) fn scene(width: f32) -> impl Scene {
                     })),
                 integer("Columns", |s| s.columns, |s, v| s.columns = v),
                 integer("Rows", |s| s.rows, |s, v| s.rows = v),
+                label("Terrain"),
+                decimal("Hill size (hexes)", |s| s.scale, |s, v| s.scale = v),
+                decimal("Relief (edge lengths)", |s| s.relief, |s, v| s.relief = v),
+                decimal("Roughness (0–1)", |s| s.roughness, |s, v| s.roughness = v),
+                decimal("Ridges (0–1)", |s| s.ridges, |s, v| s.ridges = v),
             ]
         )]
     }
@@ -71,6 +76,23 @@ fn integer(
     }
 }
 
+/// Row for a floating-point setting, committed on Enter or focus loss.
+fn decimal(
+    caption: &'static str,
+    read: fn(&HexPathsSettings) -> f32,
+    write: fn(&mut HexPathsSettings, f32),
+) -> impl Scene {
+    bsn! {
+        Node { align_items: AlignItems::Center, column_gap: px(8) }
+        Children [
+            (label_small(caption) Node { width: percent(65) }),
+            (@FeathersNumberInput
+                template(move |_| Ok(NumberSetting::<f32> { read, write }))
+                on(set_decimal)),
+        ]
+    }
+}
+
 /// Applies an integer input only when its final value fits the setting's type.
 fn set_integer(
     change: On<ValueChange<i64>>,
@@ -83,6 +105,21 @@ fn set_integer(
     {
         let mut next = settings.clone();
         (field.write)(&mut next, value);
+        settings.set_if_neq(next);
+    }
+}
+
+/// Applies a final decimal input; the generator reports invalid settings.
+fn set_decimal(
+    change: On<ValueChange<f32>>,
+    fields: Query<&NumberSetting<f32>>,
+    mut settings: ResMut<HexPathsSettings>,
+) {
+    if change.is_final
+        && let Ok(field) = fields.get(change.source)
+    {
+        let mut next = settings.clone();
+        (field.write)(&mut next, change.value);
         settings.set_if_neq(next);
     }
 }
@@ -120,6 +157,7 @@ pub(super) fn sync_settings(
     focus: Res<InputFocus>,
     mut commands: Commands,
     integers: Query<(Entity, Ref<NumberSetting<u32>>)>,
+    decimals: Query<(Entity, Ref<NumberSetting<f32>>)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
 ) {
     for (entity, field) in &integers {
@@ -127,6 +165,14 @@ pub(super) fn sync_settings(
             commands.trigger(UpdateNumberInput {
                 entity,
                 value: NumberInputValue::I64((field.read)(&settings) as i64),
+            });
+        }
+    }
+    for (entity, field) in &decimals {
+        if settings.is_changed() || field.is_added() {
+            commands.trigger(UpdateNumberInput {
+                entity,
+                value: NumberInputValue::F32((field.read)(&settings)),
             });
         }
     }

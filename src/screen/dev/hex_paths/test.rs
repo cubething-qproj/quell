@@ -17,6 +17,7 @@ impl Fixture {
                 seed: Some(7),
                 ..default()
             })
+            .init_resource::<HexTerrainTuning>()
             .init_resource::<PanelState>()
             .add_systems(
                 Update,

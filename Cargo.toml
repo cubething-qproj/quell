@@ -14,6 +14,7 @@ clippy.nonstandard_macro_braces = "warn"
 bevy = "0.19"
 bevy_enhanced_input = "0.26"
 bevy_asset_loader = "0.27"
+bevy_editor_cam = { version = "0.10", default-features = false }
 avian3d = "0.7"
 # Loads Jackdaw-authored `.bsn` scenes, answers the editor's schema query and
 # connects Play-in-editor. 0.19 is git-only; keep `rev` matching the installed editor.
