@@ -1,7 +1,7 @@
+use super::SQRT_3;
 use crate::prelude::*;
 use bevy::platform::collections::HashMap;
 use hexx::{Hex, HexLayout, HexOrientation, OffsetHexMode};
-use super::SQRT_3;
 
 const OFFSET_MODE: OffsetHexMode = OffsetHexMode::Even;
 
@@ -15,6 +15,11 @@ pub struct HexMesh {
     pub tile_corners: Vec<[usize; 6]>,
     pub positions: Vec<Vec2>,
     pub playable: Vec<bool>,
+    /// Distance from each tile centre to the playable board's edge, in hexes:
+    /// 0.5 for a playable tile on the edge, negative in the margin.
+    pub border_distance: Vec<f32>,
+    /// Tile index of each hex.
+    pub index: HashMap<Hex, usize>,
     /// The honeycomb: tile sides as corner pairs, lowest index first.
     pub edges: Vec<[usize; 2]>,
     /// Edges between playable corners; only these take trails.
@@ -33,6 +38,8 @@ impl HexMesh {
             tile_corners: Vec::new(),
             positions: Vec::new(),
             playable: Vec::new(),
+            border_distance: Vec::new(),
+            index: HashMap::default(),
             edges: Vec::new(),
             playable_edges: Vec::new(),
         };
@@ -54,6 +61,7 @@ impl HexMesh {
                         mesh.positions.len() - 1
                     })
                 });
+                mesh.index.insert(hex, mesh.tiles.len());
                 mesh.tiles.push(hex);
                 mesh.centers.push(layout.hex_to_world_pos(hex));
                 mesh.tile_corners.push(corners);
@@ -61,6 +69,10 @@ impl HexMesh {
                     (margin..margin + columns).contains(&column)
                         && (margin..margin + rows).contains(&row),
                 );
+                let (c, r) = (column as i32 - margin as i32, row as i32 - margin as i32);
+                let edge = [c, columns as i32 - 1 - c, r, rows as i32 - 1 - r];
+                mesh.border_distance
+                    .push(edge.into_iter().min().unwrap_or(0) as f32 + 0.5);
             }
         }
         let mut edges: Vec<[usize; 2]> = mesh
@@ -79,6 +91,30 @@ impl HexMesh {
         mesh.playable_edges = edges.iter().map(|&[a, b]| inside[a] && inside[b]).collect();
         mesh.edges = edges;
         mesh
+    }
+
+    /// The tile at playable offset coordinates `column`, `row`; negative or
+    /// past the board reaches into the margin.
+    pub fn tile_at(&self, column: i32, row: i32, margin: u32) -> Option<usize> {
+        let hex = Hex::from_offset_coordinates(
+            [column + margin as i32, row + margin as i32],
+            OFFSET_MODE,
+            HexOrientation::Flat,
+        );
+        self.index.get(&hex).copied()
+    }
+
+    /// Tiles sharing a side with `tile`.
+    pub fn neighbours(&self, tile: usize) -> impl Iterator<Item = usize> + '_ {
+        self.tiles[tile]
+            .all_neighbors()
+            .into_iter()
+            .filter_map(|hex| self.index.get(&hex).copied())
+    }
+
+    /// Playable tiles at least one tile in from the playable edge.
+    pub fn interior(&self) -> Vec<bool> {
+        self.border_distance.iter().map(|&d| d >= 1.5).collect()
     }
 
     /// Whether each corner belongs to a playable tile.

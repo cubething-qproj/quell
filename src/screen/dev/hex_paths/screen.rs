@@ -22,9 +22,11 @@ impl Screen for HexPathsScreen {
                         .or_else(resource_changed::<HexPathsView>)
                         .or_else(resource_changed::<HexPathsAppearance>),
                 ),
+                systems::spawn_markers.run_if(resource_exists_and_changed::<Board>),
                 systems::fit_viewport,
-                systems::aim_camera.run_if(resource_exists_and_changed::<Board>),
+                systems::aim_camera,
                 systems::orbit_camera,
+                systems::face_camera,
                 systems::draw_board,
                 panel::sync_settings,
                 panel::update_stats,
@@ -41,10 +43,13 @@ impl Screen for HexPathsScreen {
     }
 }
 
-/// Sets the dev theme and creates the board camera and panel once when
-/// entering the screen.
+/// Sets the dev theme, loads billboards, and creates the board camera and
+/// panel once when entering the screen.
 fn init(
     mut commands: Commands,
+    server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<StandardMaterial>>,
     appearance: Res<HexPathsAppearance>,
     view: Res<HexPathsView>,
     mut ui_camera: Single<(Entity, &mut Camera), With<IsDefaultUiCamera>>,
@@ -77,6 +82,25 @@ fn init(
         },
         RenderLayers::layer(31),
     ));
+    let height = appearance.billboard_height;
+    let mut billboard = |name: &str| {
+        materials.add(StandardMaterial {
+            base_color_texture: Some(server.load(format!(
+                "textures/hex-prototype/{name}-billboard.png"
+            ))),
+            alpha_mode: AlphaMode::Mask(0.5),
+            unlit: true,
+            cull_mode: None,
+            ..default()
+        })
+    };
+    commands.insert_resource(Billboards {
+        quad: meshes.add(
+            Mesh::from(Rectangle::new(height / 2., height)).translated_by(Vec3::Y * height / 2.),
+        ),
+        spawn: billboard("spawn"),
+        unknown: billboard("unknown"),
+    });
     commands.queue_spawn_scene(panel::scene(appearance.panel_width));
     screen.finish_loading();
 }
@@ -101,5 +125,6 @@ pub(super) fn unload(
     commands.remove_resource::<UiCameraState>();
     commands.remove_resource::<Board>();
     commands.remove_resource::<BoardStats>();
+    commands.remove_resource::<Billboards>();
     panel.seed_error = None;
 }

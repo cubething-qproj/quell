@@ -42,6 +42,17 @@ pub(super) fn scene(width: f32) -> impl Scene {
                         on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Heightmap; })),
                     (@FeathersButton { @caption: bsn! { label("Cost") } }
                         on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Cost; })),
+                    (@FeathersButton { @caption: bsn! { label("Suitability") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Suitability; })),
+                    (@FeathersButton { @caption: bsn! { label("Bench score") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::BenchScore; })),
+                ]),
+                label_small("Camera focus"),
+                (Node { column_gap: px(4) } Children [
+                    (@FeathersButton { @caption: bsn! { label("Terrain") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.focus = CameraFocus::Terrain; })),
+                    (@FeathersButton { @caption: bsn! { label("Player") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.focus = CameraFocus::Player; })),
                 ]),
                 label("Generation"),
                 label_small("Seed (blank = random)"),
@@ -61,6 +72,10 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 decimal("Relief (edge lengths)", |s| s.relief, |s, v| s.relief = v),
                 decimal("Roughness (0–1)", |s| s.roughness, |s, v| s.roughness = v),
                 decimal("Ridges (0–1)", |s| s.ridges, |s, v| s.ridges = v),
+                label("Nodes"),
+                integer("Nodes", |s| s.nodes, |s, v| s.nodes = v),
+                decimal("Prefer flat ground (spread)", |s| s.spread, |s, v| s.spread = v),
+                decimal("Bench view: quiet 0 – overlook 1", |s| s.view, |s, v| s.view = v),
             ]
         )]
     }
@@ -207,7 +222,10 @@ pub(super) fn update_stats(
     let Some(stats) = stats else {
         return;
     };
-    let mut value = format!("View: {:?}\nSeed: {}", view.view, stats.seed);
+    let mut value = format!(
+        "View: {:?} | Focus: {:?}\nSeed: {}",
+        view.view, view.focus, stats.seed
+    );
     if let Some(error) = &stats.error {
         value.push_str(&format!("\nGeneration error: {error}"));
     }

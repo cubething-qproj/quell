@@ -31,6 +31,7 @@ pub(super) fn spawn_board(
                 ScreenScoped,
                 Name::new("Hex Board"),
                 Transform::default(),
+                Visibility::default(),
             ));
             let terrain = Terrain::generate(&settings, &tuning, &mut StdRng::seed_from_u64(seed));
             commands.insert_resource(Board::new(terrain));
@@ -51,6 +52,7 @@ pub(super) fn spawn_board(
 pub(super) fn spawn_surface(
     mut commands: Commands,
     board: Option<Res<Board>>,
+    settings: Res<HexPathsSettings>,
     tuning: Res<HexTerrainTuning>,
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
@@ -68,7 +70,13 @@ pub(super) fn spawn_surface(
     commands.spawn((
         TerrainSurface,
         Name::new("Terrain"),
-        Mesh3d(meshes.add(surface_mesh(&board.terrain, &tuning, view.view, &appearance))),
+        Mesh3d(meshes.add(surface_mesh(
+            &board.terrain,
+            &settings,
+            &tuning,
+            view.view,
+            &appearance,
+        ))),
         MeshMaterial3d(materials.add(StandardMaterial {
             unlit: true,
             ..default()
@@ -76,6 +84,45 @@ pub(super) fn spawn_surface(
         RenderLayers::layer(31),
         ChildOf(root),
     ));
+}
+
+/// Marks spawn and every node with a billboard on its pad.
+pub(super) fn spawn_markers(
+    mut commands: Commands,
+    board: Res<Board>,
+    billboards: Res<Billboards>,
+    roots: Query<Entity, With<BoardRoot>>,
+) {
+    let Ok(root) = roots.single() else {
+        return;
+    };
+    let terrain = &board.terrain;
+    let pads = std::iter::once((terrain.spawn, &billboards.spawn))
+        .chain(terrain.nodes.iter().map(|&n| (n, &billboards.unknown)));
+    for (tile, material) in pads {
+        commands.spawn((
+            Name::new("Marker"),
+            Billboard,
+            Mesh3d(billboards.quad.clone()),
+            MeshMaterial3d(material.clone()),
+            Transform::from_translation(world(
+                terrain.mesh.centers[tile],
+                terrain.pad_height(tile),
+            )),
+            RenderLayers::layer(31),
+            ChildOf(root),
+        ));
+    }
+}
+
+/// Turns billboards to face the camera.
+pub(super) fn face_camera(
+    camera: Single<&Transform, (With<HexPathsCamera>, Without<Billboard>)>,
+    mut billboards: Query<&mut Transform, With<Billboard>>,
+) {
+    for mut transform in &mut billboards {
+        transform.rotation = camera.rotation;
+    }
 }
 
 /// Keeps the camera's viewport to the window area beside the settings panel.
@@ -100,18 +147,30 @@ pub(super) fn fit_viewport(
     });
 }
 
-/// Points the camera at the middle of a new board from the view's starting
-/// distance, keeping its current orientation.
+/// Points the camera at its focus from the focus's starting distance,
+/// keeping its orientation, when the board or the focus changes.
 pub(super) fn aim_camera(
-    board: Res<Board>,
+    board: Option<Res<Board>>,
     view: Res<HexPathsView>,
+    mut aimed: Local<Option<CameraFocus>>,
     mut camera: Single<&mut Transform, With<HexPathsCamera>>,
 ) {
-    camera.translation = board.centre - camera.forward() * view.initial_distance;
+    let Some(board) = board else {
+        return;
+    };
+    if !board.is_changed() && *aimed == Some(view.focus) {
+        return;
+    }
+    *aimed = Some(view.focus);
+    let distance = match view.focus {
+        CameraFocus::Terrain => view.initial_distance,
+        CameraFocus::Player => view.player_distance,
+    };
+    camera.translation = board.focus(view.focus) - camera.forward() * distance;
 }
 
-/// Orbits the camera about the board's middle while the right mouse button
-/// is held over the board, and zooms towards it with the mouse wheel.
+/// Orbits the camera about its focus while the right mouse button is held
+/// over the board, and zooms towards it with the mouse wheel.
 pub(super) fn orbit_camera(
     mouse: Res<ButtonInput<MouseButton>>,
     motion: Res<AccumulatedMouseMotion>,
@@ -119,6 +178,7 @@ pub(super) fn orbit_camera(
     appearance: Res<HexPathsAppearance>,
     window: Single<&Window, With<PrimaryWindow>>,
     board: Option<Res<Board>>,
+    view: Res<HexPathsView>,
     camera: Single<(&Camera, &Transform, &mut EditorCam), With<HexPathsCamera>>,
 ) {
     let (camera, transform, mut controller) = camera.into_inner();
@@ -136,7 +196,7 @@ pub(super) fn orbit_camera(
     let anchor = transform
         .compute_affine()
         .inverse()
-        .transform_point3(board.centre)
+        .transform_point3(board.focus(view.focus))
         .as_dvec3();
     let zoom = match scroll.unit {
         MouseScrollUnit::Line => scroll.delta.y * appearance.zoom_per_line,
@@ -192,6 +252,7 @@ pub(super) fn draw_board(
 /// towards paper.
 fn surface_mesh(
     terrain: &Terrain,
+    settings: &HexPathsSettings,
     tuning: &HexTerrainTuning,
     view: TerrainView,
     appearance: &HexPathsAppearance,
@@ -229,7 +290,7 @@ fn surface_mesh(
         .collect();
     let light = appearance.light.normalize();
     let paper = appearance.paper.to_linear();
-    let (tint, amounts) = view_tint(terrain, tuning, view, appearance);
+    let (tint, amounts) = view_tint(terrain, settings, tuning, view, appearance);
     let colours: Vec<[f32; 4]> = heights
         .iter()
         .zip(&normals)
@@ -259,44 +320,89 @@ fn surface_mesh(
 /// point (corners, then centres), 0–1.
 fn view_tint(
     terrain: &Terrain,
+    settings: &HexPathsSettings,
     tuning: &HexTerrainTuning,
     view: TerrainView,
     appearance: &HexPathsAppearance,
 ) -> (LinearRgba, Vec<f32>) {
     let mesh = &terrain.mesh;
-    let corners = match view {
-        TerrainView::Heightmap => vec![0.; mesh.positions.len()],
-        TerrainView::Cost => {
-            // Shown as `aversion × |rise|`, the log of the step cost, scaled
-            // so the top few percent of playable edges are full colour.
-            let steepness: Vec<f32> = terrain
-                .step_costs(tuning.aversion)
-                .into_iter()
-                .map(f32::ln)
-                .collect();
-            let mut playable: Vec<f32> =
-                steepness.iter().copied().filter(|s| s.is_finite()).collect();
-            playable.sort_by(f32::total_cmp);
-            let top = playable
-                .get(((playable.len() as f32 - 1.) * appearance.cost_percentile) as usize)
-                .copied()
-                .unwrap_or(1.)
-                .max(f32::EPSILON);
-            let mut corners = vec![0f32; mesh.positions.len()];
-            for (&[a, b], &s) in mesh.edges.iter().zip(&steepness) {
-                if s.is_finite() {
-                    let amount = (s / top).min(1.);
-                    corners[a] = corners[a].max(amount);
-                    corners[b] = corners[b].max(amount);
-                }
-            }
-            corners
+    // Per-tile measures tint the best ground.
+    let score = |tiles: Vec<f32>| (appearance.score.to_linear(), tile_amounts(terrain, &tiles));
+    match view {
+        TerrainView::Heightmap => (
+            LinearRgba::NONE,
+            vec![0.; mesh.positions.len() + mesh.tiles.len()],
+        ),
+        TerrainView::Cost => (
+            appearance.cost.to_linear(),
+            corner_amounts(terrain, &steepness(terrain, tuning, appearance)),
+        ),
+        TerrainView::Suitability => score(
+            terrain
+                .suitability
+                .iter()
+                .map(|s| s.powf(settings.spread))
+                .collect(),
+        ),
+        TerrainView::BenchScore => score(terrain.bench_score.clone()),
+    }
+}
+
+/// Each corner's steepest edge as `aversion × |rise|`, the log of the step
+/// cost, scaled so the top few percent of playable edges reach 1.
+fn steepness(
+    terrain: &Terrain,
+    tuning: &HexTerrainTuning,
+    appearance: &HexPathsAppearance,
+) -> Vec<f32> {
+    let mesh = &terrain.mesh;
+    let steepness: Vec<f32> = terrain
+        .step_costs(tuning.aversion)
+        .into_iter()
+        .map(f32::ln)
+        .collect();
+    let mut playable: Vec<f32> = steepness.iter().copied().filter(|s| s.is_finite()).collect();
+    playable.sort_by(f32::total_cmp);
+    let top = playable
+        .get(((playable.len() as f32 - 1.) * appearance.cost_percentile) as usize)
+        .copied()
+        .unwrap_or(1.)
+        .max(f32::EPSILON);
+    let mut corners = vec![0f32; mesh.positions.len()];
+    for (&[a, b], &s) in mesh.edges.iter().zip(&steepness) {
+        if s.is_finite() {
+            let amount = (s / top).min(1.);
+            corners[a] = corners[a].max(amount);
+            corners[b] = corners[b].max(amount);
         }
-    };
-    let centres = mesh
+    }
+    corners
+}
+
+/// Per-point amounts from per-corner ones: centres take the mean of their
+/// corners.
+fn corner_amounts(terrain: &Terrain, corners: &[f32]) -> Vec<f32> {
+    let centres = terrain
+        .mesh
         .tile_corners
         .iter()
         .map(|tile| tile.iter().map(|&c| corners[c]).sum::<f32>() / 6.);
-    let amounts = corners.iter().copied().chain(centres).collect();
-    (appearance.cost.to_linear(), amounts)
+    corners.iter().copied().chain(centres).collect()
+}
+
+/// Per-point amounts from per-tile ones: corners take the mean of the tiles
+/// they belong to.
+fn tile_amounts(terrain: &Terrain, tiles: &[f32]) -> Vec<f32> {
+    let mesh = &terrain.mesh;
+    let mut sums = vec![(0., 0.); mesh.positions.len()];
+    for (corners, &amount) in mesh.tile_corners.iter().zip(tiles) {
+        for &c in corners {
+            sums[c].0 += amount;
+            sums[c].1 += 1.;
+        }
+    }
+    sums.into_iter()
+        .map(|(sum, count)| sum / count)
+        .chain(tiles.iter().copied())
+        .collect()
 }

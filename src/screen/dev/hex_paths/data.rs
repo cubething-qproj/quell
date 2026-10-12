@@ -9,6 +9,10 @@ pub struct BoardRoot;
 #[derive(Component)]
 pub struct TerrainSurface;
 
+/// A quad that turns to face the camera.
+#[derive(Component)]
+pub struct Billboard;
+
 /// Camera rendering only the hex board.
 #[derive(Component)]
 pub struct HexPathsCamera;
@@ -18,6 +22,16 @@ pub struct HexPathsCamera;
 pub struct UiCameraState {
     pub entity: Entity,
     pub clear_color: ClearColorConfig,
+}
+
+/// Shared billboard quad and materials, loaded with the screen.
+#[derive(Resource)]
+pub struct Billboards {
+    /// Upright quad standing on its origin.
+    pub quad: Handle<Mesh>,
+    pub spawn: Handle<StandardMaterial>,
+    /// A node whose type is not yet known.
+    pub unknown: Handle<StandardMaterial>,
 }
 
 /// Separate gizmo layer for the hex camera.
@@ -69,6 +83,10 @@ pub struct HexPathsAppearance {
     pub margin_veil: f32,
     /// Direction the hillshade light comes from.
     pub light: Vec3,
+    /// Colour of the best tiles in the suitability and bench score views.
+    pub score: Color,
+    /// Height of node and player billboards, in edge lengths.
+    pub billboard_height: f32,
     /// Colour of the steepest edges in the cost view.
     pub cost: Color,
     /// Share of playable edges below the cost view's full colour, 0–1.
@@ -98,6 +116,8 @@ impl Default for HexPathsAppearance {
             paper: rgb(255, 250, 240),
             margin_veil: 0.45,
             light: Vec3::new(-1., 1.4, 1.),
+            score: rgb(40, 90, 170),
+            billboard_height: 1.5,
             cost: rgb(122, 28, 28),
             cost_percentile: 0.98,
             shade_floor: 0.62,
@@ -130,6 +150,21 @@ pub enum TerrainView {
     Heightmap,
     /// Steep edges darken towards `HexPathsAppearance::cost`.
     Cost,
+    /// Buildable ground, as node placement sees it, tints towards
+    /// `HexPathsAppearance::score`.
+    Suitability,
+    /// Good bench sites tint towards `HexPathsAppearance::score`.
+    BenchScore,
+}
+
+/// What the camera orbits and follows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Reflect)]
+pub enum CameraFocus {
+    /// The middle of the board, from afar.
+    #[default]
+    Terrain,
+    /// The player, from close by. Spawn until there is a player.
+    Player,
 }
 
 /// How the board is viewed. Editing these never regenerates a board.
@@ -138,18 +173,23 @@ pub enum TerrainView {
 pub struct HexPathsView {
     /// Which measure colours the terrain.
     pub view: TerrainView,
+    pub focus: CameraFocus,
     /// Camera pitch below the horizon on entering the screen, in degrees.
     pub initial_tilt: f32,
     /// Distance from the camera to the middle of a new board.
     pub initial_distance: f32,
+    /// Distance from the camera to the player on focusing it.
+    pub player_distance: f32,
 }
 
 impl Default for HexPathsView {
     fn default() -> Self {
         Self {
             view: TerrainView::default(),
+            focus: CameraFocus::default(),
             initial_tilt: 60.,
             initial_distance: 30.,
+            player_distance: 10.,
         }
     }
 }
@@ -163,6 +203,20 @@ pub struct Board {
 }
 
 impl Board {
+    /// Where the camera looks for `focus`.
+    pub fn focus(&self, focus: CameraFocus) -> Vec3 {
+        match focus {
+            CameraFocus::Terrain => self.centre,
+            CameraFocus::Player => {
+                let spawn = self.terrain.spawn;
+                super::terrain::world(
+                    self.terrain.mesh.centers[spawn],
+                    self.terrain.pad_height(spawn),
+                )
+            }
+        }
+    }
+
     /// Finds the middle of the playable area of `terrain`.
     pub fn new(terrain: Terrain) -> Self {
         let inside = terrain.mesh.playable_corners();
@@ -208,18 +262,27 @@ pub struct HexPathsSettings {
     pub roughness: f32,
     /// Blend towards ridged noise, 0–1.
     pub ridges: f32,
+    /// Nodes to place, besides spawn.
+    pub nodes: u32,
+    /// How strongly node sites prefer buildable ground; 0 ignores it.
+    pub spread: f32,
+    /// Bench preference, 0–1: 0 favours quiet, enclosed spots, 1 overlooks.
+    pub view: f32,
 }
 
 impl Default for HexPathsSettings {
     fn default() -> Self {
         Self {
-            columns: 10,
-            rows: 8,
+            columns: 20,
+            rows: 20,
             seed: None,
             scale: 8.,
             relief: 6.,
             roughness: 0.5,
             ridges: 0.3,
+            nodes: 9,
+            spread: 1.,
+            view: 0.7,
         }
     }
 }
@@ -234,9 +297,12 @@ impl HexPathsSettings {
             (self.scale > 0., "scale must be positive"),
             (self.relief >= 0., "relief must not be negative"),
             (
-                share.contains(&self.roughness) && share.contains(&self.ridges),
-                "roughness and ridges must be within 0..=1",
+                share.contains(&self.roughness)
+                    && share.contains(&self.ridges)
+                    && share.contains(&self.view),
+                "roughness, ridges and view must be within 0..=1",
             ),
+            (self.spread >= 0., "spread must not be negative"),
         ]
         .into_iter()
         .find(|(ok, _)| !ok)
@@ -260,6 +326,12 @@ pub struct HexTerrainTuning {
     /// Steepness aversion in Tobler's hiking function: a step costs
     /// `exp(aversion × |rise|)`.
     pub aversion: f32,
+    /// Nodes keep at least this many hexes apart while they can.
+    pub min_spacing: f32,
+    /// How far a bench's view counts, in hexes.
+    pub view_radius: f32,
+    /// Eye height above the ground, for views.
+    pub eye_height: f32,
 }
 
 impl Default for HexTerrainTuning {
@@ -270,6 +342,9 @@ impl Default for HexTerrainTuning {
             octaves: 4,
             valleys: 1.5,
             aversion: 3.5,
+            min_spacing: 3.,
+            view_radius: 6.,
+            eye_height: 0.5,
         }
     }
 }
