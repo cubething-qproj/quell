@@ -1,7 +1,5 @@
 use super::{
     data::*,
-    panel,
-    screen::HexPathsScreen,
     terrain::{Terrain, world},
 };
 use crate::prelude::*;
@@ -12,51 +10,8 @@ use bevy::{
     mesh::{Indices, PrimitiveTopology},
     window::PrimaryWindow,
 };
-use bevy_editor_cam::prelude::{EditorCam, EnabledMotion};
+use bevy_editor_cam::prelude::EditorCam;
 use rand::{SeedableRng, rngs::StdRng};
-
-/// Creates the board camera and panel once when entering the screen.
-pub(super) fn init(
-    mut commands: Commands,
-    appearance: Res<HexPathsAppearance>,
-    view: Res<HexPathsView>,
-    mut ui_camera: Single<(Entity, &mut Camera), With<IsDefaultUiCamera>>,
-    mut screen: ScreenInfoMut<HexPathsScreen>,
-) {
-    commands.insert_resource(UiCameraState {
-        entity: ui_camera.0,
-        clear_color: ui_camera.1.clear_color,
-    });
-    ui_camera.1.clear_color = ClearColorConfig::None;
-    commands.spawn((
-        Name::new("Hex Board Camera"),
-        ScreenScoped,
-        HexPathsCamera,
-        Camera3d::default(),
-        // Panning will follow the player or terrain instead.
-        EditorCam {
-            enabled_motion: EnabledMotion {
-                pan: false,
-                orbit: true,
-                zoom: true,
-            },
-            ..default()
-        },
-        Transform::from_rotation(Quat::from_rotation_x(-view.initial_tilt.to_radians())),
-        Camera {
-            order: CameraOrder::World as isize,
-            ..default()
-        },
-        RenderLayers::layer(31),
-    ));
-    commands.queue_spawn_scene(panel::scene(appearance.panel_width));
-    screen.finish_loading();
-}
-
-/// Requests a board on each screen entry; Update is the sole generation path.
-pub(super) fn request_board(mut settings: ResMut<HexPathsSettings>) {
-    settings.set_changed();
-}
 
 /// Replaces the current board; invalid settings clear it and report an error.
 pub(super) fn spawn_board(
@@ -230,24 +185,6 @@ pub(super) fn draw_board(
             appearance.grid,
         );
     }
-}
-
-/// Removes play-time resources when the screen's entities are cleaned up.
-pub(super) fn unload(
-    mut commands: Commands,
-    mut panel: ResMut<PanelState>,
-    ui_state: Option<Res<UiCameraState>>,
-    mut cameras: Query<&mut Camera>,
-) {
-    if let Some(state) = ui_state
-        && let Ok(mut camera) = cameras.get_mut(state.entity)
-    {
-        camera.clear_color = state.clear_color;
-    }
-    commands.remove_resource::<UiCameraState>();
-    commands.remove_resource::<Board>();
-    commands.remove_resource::<BoardStats>();
-    panel.seed_error = None;
 }
 
 /// The terrain as triangles around each tile centre. Colours follow the

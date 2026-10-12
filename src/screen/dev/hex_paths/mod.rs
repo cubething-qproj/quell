@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use bevy_editor_cam::prelude::MinimalEditorCamPlugin;
 use bevy::{
-    feathers::{FeathersPlugins, dark_theme::create_dark_theme, theme::UiTheme},
+    feathers::FeathersPlugins,
     gizmos::config::GizmoConfig,
 };
 
@@ -20,7 +20,6 @@ pub mod prelude {
 /// Registers the hex paths prototype and its editable resources.
 pub fn plugin(app: &mut App) {
     app.add_plugins((FeathersPlugins, MinimalEditorCamPlugin))
-        .insert_resource(UiTheme(create_dark_theme()))
         .init_resource::<data::HexPathsSettings>()
         .init_resource::<data::HexTerrainTuning>()
         .init_resource::<data::HexPathsView>()

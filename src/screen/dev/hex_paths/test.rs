@@ -1,4 +1,4 @@
-use super::{data::*, systems};
+use super::{data::*, screen, systems};
 use crate::prelude::*;
 use bevy::ecs::schedule::ScheduleLabel;
 use q_test_harness::prelude::{AppExt as _, InputTestPlugin};
@@ -97,7 +97,7 @@ fn leaving_the_screen_restores_the_ui_cameras_clear_color() {
         entity: camera,
         clear_color,
     });
-    world.run_system_cached(systems::unload).unwrap();
+    world.run_system_cached(screen::unload).unwrap();
     let ClearColorConfig::Custom(restored) = world.get::<Camera>(camera).unwrap().clear_color
     else {
         panic!("the previous custom clear color should be restored");
