@@ -15,6 +15,10 @@ pub struct HexMesh {
     pub tile_corners: Vec<[usize; 6]>,
     pub positions: Vec<Vec2>,
     pub playable: Vec<bool>,
+    /// The honeycomb: tile sides as corner pairs, lowest index first.
+    pub edges: Vec<[usize; 2]>,
+    /// Edges between playable corners; only these take trails.
+    pub playable_edges: Vec<bool>,
 }
 
 impl HexMesh {
@@ -29,6 +33,8 @@ impl HexMesh {
             tile_corners: Vec::new(),
             positions: Vec::new(),
             playable: Vec::new(),
+            edges: Vec::new(),
+            playable_edges: Vec::new(),
         };
         for column in 0..columns + 2 * margin {
             for row in 0..rows + 2 * margin {
@@ -57,6 +63,21 @@ impl HexMesh {
                 );
             }
         }
+        let mut edges: Vec<[usize; 2]> = mesh
+            .tile_corners
+            .iter()
+            .flat_map(|corners| {
+                (0..6).map(move |i| {
+                    let (a, b) = (corners[i], corners[(i + 1) % 6]);
+                    [a.min(b), a.max(b)]
+                })
+            })
+            .collect();
+        edges.sort();
+        edges.dedup();
+        let inside = mesh.playable_corners();
+        mesh.playable_edges = edges.iter().map(|&[a, b]| inside[a] && inside[b]).collect();
+        mesh.edges = edges;
         mesh
     }
 
@@ -102,6 +123,18 @@ mod tests {
         }
         assert!(tiles_per_corner.iter().all(|&n| (1..=3).contains(&n)));
         assert!(tiles_per_corner.contains(&3));
+    }
+
+    #[test]
+    fn edges_form_a_honeycomb() {
+        let mesh = HexMesh::build(4, 3, 2);
+        let mut degree = vec![0; mesh.positions.len()];
+        for &[a, b] in &mesh.edges {
+            degree[a] += 1;
+            degree[b] += 1;
+        }
+        assert!(degree.iter().all(|&d| (2..=3).contains(&d)));
+        assert!(mesh.playable_edges.contains(&true));
     }
 
     #[test]

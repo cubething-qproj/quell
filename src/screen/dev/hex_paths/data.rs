@@ -69,6 +69,10 @@ pub struct HexPathsAppearance {
     pub margin_veil: f32,
     /// Direction the hillshade light comes from.
     pub light: Vec3,
+    /// Colour of the steepest edges in the cost view.
+    pub cost: Color,
+    /// Share of playable edges below the cost view's full colour, 0–1.
+    pub cost_percentile: f32,
     /// Brightness of a slope facing away from the light.
     pub shade_floor: f32,
     /// Extra brightness of flat ground in full light.
@@ -94,6 +98,8 @@ impl Default for HexPathsAppearance {
             paper: rgb(255, 250, 240),
             margin_veil: 0.45,
             light: Vec3::new(-1., 1.4, 1.),
+            cost: rgb(122, 28, 28),
+            cost_percentile: 0.98,
             shade_floor: 0.62,
             shade_gain: 0.3,
         }
@@ -116,10 +122,22 @@ impl HexPathsAppearance {
     }
 }
 
+/// Which measure the terrain is coloured by.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Reflect)]
+pub enum TerrainView {
+    /// Height and hillshade only.
+    #[default]
+    Heightmap,
+    /// Steep edges darken towards `HexPathsAppearance::cost`.
+    Cost,
+}
+
 /// How the board is viewed. Editing these never regenerates a board.
 #[derive(Resource, Debug, Clone, PartialEq, Reflect)]
 #[reflect(Resource)]
 pub struct HexPathsView {
+    /// Which measure colours the terrain.
+    pub view: TerrainView,
     /// Camera pitch below the horizon on entering the screen, in degrees.
     pub initial_tilt: f32,
     /// Distance from the camera to the middle of a new board.
@@ -129,6 +147,7 @@ pub struct HexPathsView {
 impl Default for HexPathsView {
     fn default() -> Self {
         Self {
+            view: TerrainView::default(),
             initial_tilt: 60.,
             initial_distance: 30.,
         }
@@ -238,6 +257,9 @@ pub struct HexTerrainTuning {
     pub octaves: u32,
     /// Exponent that flattens lowlands.
     pub valleys: f32,
+    /// Steepness aversion in Tobler's hiking function: a step costs
+    /// `exp(aversion × |rise|)`.
+    pub aversion: f32,
 }
 
 impl Default for HexTerrainTuning {
@@ -247,6 +269,7 @@ impl Default for HexTerrainTuning {
             resolution: 4.,
             octaves: 4,
             valleys: 1.5,
+            aversion: 3.5,
         }
     }
 }

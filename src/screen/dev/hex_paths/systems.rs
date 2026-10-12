@@ -91,11 +91,13 @@ pub(super) fn spawn_board(
     }
 }
 
-/// Rebuilds the terrain surface under the board root, coloured by height
-/// and hill-shaded.
+/// Rebuilds the terrain surface under the board root, coloured by height,
+/// hill-shaded, and tinted by the current view's measure.
 pub(super) fn spawn_surface(
     mut commands: Commands,
     board: Option<Res<Board>>,
+    tuning: Res<HexTerrainTuning>,
+    view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
     roots: Query<Entity, With<BoardRoot>>,
     surfaces: Query<Entity, With<TerrainSurface>>,
@@ -111,7 +113,7 @@ pub(super) fn spawn_surface(
     commands.spawn((
         TerrainSurface,
         Name::new("Terrain"),
-        Mesh3d(meshes.add(surface_mesh(&board.terrain, &appearance))),
+        Mesh3d(meshes.add(surface_mesh(&board.terrain, &tuning, view.view, &appearance))),
         MeshMaterial3d(materials.add(StandardMaterial {
             unlit: true,
             ..default()
@@ -249,8 +251,14 @@ pub(super) fn unload(
 }
 
 /// The terrain as triangles around each tile centre. Colours follow the
-/// height ramp, shaded by slope, with the margin faded towards paper.
-fn surface_mesh(terrain: &Terrain, appearance: &HexPathsAppearance) -> Mesh {
+/// height ramp, shaded by slope, tinted by `view`, with the margin faded
+/// towards paper.
+fn surface_mesh(
+    terrain: &Terrain,
+    tuning: &HexTerrainTuning,
+    view: TerrainView,
+    appearance: &HexPathsAppearance,
+) -> Mesh {
     let mesh = &terrain.mesh;
     let heights = terrain.point_heights();
     let positions: Vec<Vec3> = mesh
@@ -284,14 +292,16 @@ fn surface_mesh(terrain: &Terrain, appearance: &HexPathsAppearance) -> Mesh {
         .collect();
     let light = appearance.light.normalize();
     let paper = appearance.paper.to_linear();
+    let (tint, amounts) = view_tint(terrain, tuning, view, appearance);
     let colours: Vec<[f32; 4]> = heights
         .iter()
         .zip(&normals)
         .zip(&inside)
-        .map(|((&h, &n), &inside)| {
+        .zip(&amounts)
+        .map(|(((&h, &n), &inside), &amount)| {
             let shade =
                 appearance.shade_floor + appearance.shade_gain * n.dot(light).max(0.) / light.y;
-            let lit = appearance.ramp(h) * shade;
+            let lit = (appearance.ramp(h) * shade).mix(&tint, amount);
             let veil = if inside { 0. } else { appearance.margin_veil };
             lit.mix(&paper, veil).with_alpha(1.).to_f32_array()
         })
@@ -306,4 +316,50 @@ fn surface_mesh(terrain: &Terrain, appearance: &HexPathsAppearance) -> Mesh {
     .with_inserted_indices(Indices::U32(
         triangles.into_iter().flatten().map(|i| i as u32).collect(),
     ))
+}
+
+/// The colour `view` tints the terrain with, and how strongly at each mesh
+/// point (corners, then centres), 0–1.
+fn view_tint(
+    terrain: &Terrain,
+    tuning: &HexTerrainTuning,
+    view: TerrainView,
+    appearance: &HexPathsAppearance,
+) -> (LinearRgba, Vec<f32>) {
+    let mesh = &terrain.mesh;
+    let corners = match view {
+        TerrainView::Heightmap => vec![0.; mesh.positions.len()],
+        TerrainView::Cost => {
+            // Shown as `aversion × |rise|`, the log of the step cost, scaled
+            // so the top few percent of playable edges are full colour.
+            let steepness: Vec<f32> = terrain
+                .step_costs(tuning.aversion)
+                .into_iter()
+                .map(f32::ln)
+                .collect();
+            let mut playable: Vec<f32> =
+                steepness.iter().copied().filter(|s| s.is_finite()).collect();
+            playable.sort_by(f32::total_cmp);
+            let top = playable
+                .get(((playable.len() as f32 - 1.) * appearance.cost_percentile) as usize)
+                .copied()
+                .unwrap_or(1.)
+                .max(f32::EPSILON);
+            let mut corners = vec![0f32; mesh.positions.len()];
+            for (&[a, b], &s) in mesh.edges.iter().zip(&steepness) {
+                if s.is_finite() {
+                    let amount = (s / top).min(1.);
+                    corners[a] = corners[a].max(amount);
+                    corners[b] = corners[b].max(amount);
+                }
+            }
+            corners
+        }
+    };
+    let centres = mesh
+        .tile_corners
+        .iter()
+        .map(|tile| tile.iter().map(|&c| corners[c]).sum::<f32>() / 6.);
+    let amounts = corners.iter().copied().chain(centres).collect();
+    (appearance.cost.to_linear(), amounts)
 }

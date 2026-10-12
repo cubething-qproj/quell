@@ -36,6 +36,23 @@ impl Terrain {
         Self { mesh, heights }
     }
 
+    /// Walking cost of each edge by Tobler's hiking function,
+    /// `exp(aversion × |rise|)`; infinite off the playable board.
+    pub fn step_costs(&self, aversion: f32) -> Vec<f32> {
+        self.mesh
+            .edges
+            .iter()
+            .zip(&self.mesh.playable_edges)
+            .map(|(&[a, b], &playable)| {
+                if playable {
+                    (aversion * (self.heights[a] - self.heights[b]).abs()).exp()
+                } else {
+                    f32::INFINITY
+                }
+            })
+            .collect()
+    }
+
     /// Height of every mesh point: corners, then tile centres at the mean of
     /// their corners.
     pub fn point_heights(&self) -> Vec<f32> {
@@ -71,5 +88,24 @@ mod tests {
                 .all(|h| (0. ..=settings.relief).contains(h))
         );
         assert_eq!(terrain.heights, generate().heights);
+    }
+
+    #[test]
+    fn steps_cost_more_uphill_and_nothing_off_the_board() {
+        let mut terrain = Terrain::generate(
+            &HexPathsSettings::default(),
+            &HexTerrainTuning::default(),
+            &mut StdRng::seed_from_u64(3),
+        );
+        let costs = terrain.step_costs(3.5);
+        terrain.heights.iter_mut().for_each(|h| *h = 0.);
+        for ((cost, flat_cost), &playable) in costs
+            .iter()
+            .zip(terrain.step_costs(3.5))
+            .zip(&terrain.mesh.playable_edges)
+        {
+            assert_eq!(cost.is_finite(), playable);
+            assert!(!playable || (*cost >= 1. && flat_cost == 1.));
+        }
     }
 }

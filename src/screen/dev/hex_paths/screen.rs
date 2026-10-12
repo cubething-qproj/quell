@@ -16,7 +16,9 @@ impl Screen for HexPathsScreen {
                     resource_changed::<HexPathsSettings>.or_else(resource_changed::<HexTerrainTuning>),
                 ),
                 systems::spawn_surface.run_if(
-                    resource_exists_and_changed::<Board>.or_else(resource_changed::<HexPathsAppearance>),
+                    resource_exists_and_changed::<Board>
+                        .or_else(resource_changed::<HexPathsView>)
+                        .or_else(resource_changed::<HexPathsAppearance>),
                 ),
                 systems::fit_viewport,
                 systems::aim_camera.run_if(resource_exists_and_changed::<Board>),

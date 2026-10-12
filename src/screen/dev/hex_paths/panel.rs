@@ -36,6 +36,13 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 (@FeathersButton { @caption: bsn! { label("Regenerate") } }
                     on(|_: On<Activate>, mut settings: ResMut<HexPathsSettings>| { settings.set_changed(); })),
                 (label_small("") StatsText),
+                label("View"),
+                (Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
+                    (@FeathersButton { @caption: bsn! { label("Heightmap") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Heightmap; })),
+                    (@FeathersButton { @caption: bsn! { label("Cost") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Cost; })),
+                ]),
                 label("Generation"),
                 label_small("Seed (blank = random)"),
                 (@FeathersTextInputContainer Children [(
@@ -190,16 +197,17 @@ pub(super) fn sync_settings(
     }
 }
 
-/// Displays the seed and preserves useful errors while editing.
+/// Displays the view and seed, and preserves useful errors while editing.
 pub(super) fn update_stats(
     stats: Option<Res<BoardStats>>,
+    view: Res<HexPathsView>,
     panel: Res<PanelState>,
     mut texts: Query<&mut Text, With<StatsText>>,
 ) {
     let Some(stats) = stats else {
         return;
     };
-    let mut value = format!("Seed: {}", stats.seed);
+    let mut value = format!("View: {:?}\nSeed: {}", view.view, stats.seed);
     if let Some(error) = &stats.error {
         value.push_str(&format!("\nGeneration error: {error}"));
     }
