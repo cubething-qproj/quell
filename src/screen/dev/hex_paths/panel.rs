@@ -3,8 +3,7 @@ use crate::prelude::*;
 use bevy::{
     feathers::{
         controls::{
-            FeathersButton, FeathersNumberInput, FeathersTextInput, FeathersTextInputContainer,
-            NumberFormat, NumberInputValue, UpdateNumberInput,
+            FeathersButton, FeathersSlider, FeathersTextInput, FeathersTextInputContainer,
         },
         display::{label, label_small},
         theme::ThemeBackgroundColor,
@@ -12,7 +11,7 @@ use bevy::{
     },
     input_focus::{InputFocus, tab_navigation::TabGroup},
     text::{EditableText, EditableTextFilter, TextEdit, TextEditChange},
-    ui_widgets::{Activate, ScrollArea, ValueChange},
+    ui_widgets::{Activate, ScrollArea, SliderPrecision, SliderStep, SliderValue, ValueChange},
 };
 
 /// Scrollable debug panel, with typed controls for all generation settings.
@@ -47,7 +46,9 @@ pub(super) fn scene(width: f32) -> impl Scene {
                     (@FeathersButton { @caption: bsn! { label("Bench score") } }
                         on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::BenchScore; })),
                 ]),
-                label_small("Camera focus"),
+                (@FeathersButton { @caption: bsn! { label("Reveal nodes") } }
+                    on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.reveal_nodes = !v.reveal_nodes; })),
+                label_small("Camera focus (or click a marker)"),
                 (Node { column_gap: px(4) } Children [
                     (@FeathersButton { @caption: bsn! { label("Terrain") } }
                         on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.focus = CameraFocus::Terrain; })),
@@ -65,78 +66,55 @@ pub(super) fn scene(width: f32) -> impl Scene {
                     on(|_: On<Activate>, stats: Option<Res<BoardStats>>, mut settings: ResMut<HexPathsSettings>| {
                         if let Some(stats) = stats { settings.seed = Some(stats.seed); }
                     })),
-                integer("Columns", |s| s.columns, |s, v| s.columns = v),
-                integer("Rows", |s| s.rows, |s, v| s.rows = v),
+                slider("Columns", 4., 40., 1., |s| s.columns as f32, |s, v| s.columns = v as u32),
+                slider("Rows", 4., 40., 1., |s| s.rows as f32, |s, v| s.rows = v as u32),
                 label("Terrain"),
-                decimal("Hill size (hexes)", |s| s.scale, |s, v| s.scale = v),
-                decimal("Relief (edge lengths)", |s| s.relief, |s, v| s.relief = v),
-                decimal("Roughness (0–1)", |s| s.roughness, |s, v| s.roughness = v),
-                decimal("Ridges (0–1)", |s| s.ridges, |s, v| s.ridges = v),
+                slider("Hill size (hexes)", 1., 20., 0.5, |s| s.scale, |s, v| s.scale = v),
+                slider("Relief (edge lengths)", 0., 12., 0.5, |s| s.relief, |s, v| s.relief = v),
+                slider("Roughness", 0., 1., 0.05, |s| s.roughness, |s, v| s.roughness = v),
+                slider("Ridges", 0., 1., 0.05, |s| s.ridges, |s, v| s.ridges = v),
                 label("Nodes"),
-                integer("Nodes", |s| s.nodes, |s, v| s.nodes = v),
-                decimal("Prefer flat ground (spread)", |s| s.spread, |s, v| s.spread = v),
-                decimal("Bench view: quiet 0 – overlook 1", |s| s.view, |s, v| s.view = v),
+                slider("Points of interest", 0., 20., 1., |s| s.pois as f32, |s, v| s.pois = v as u32),
+                slider("Benches", 0., 10., 1., |s| s.benches as f32, |s, v| s.benches = v as u32),
+                slider("Prefer flat ground (spread)", 0., 4., 0.1, |s| s.spread, |s, v| s.spread = v),
+                slider("Bench view: quiet 0 – overlook 1", 0., 1., 0.05, |s| s.view, |s, v| s.view = v),
             ]
         )]
     }
 }
 
-/// Row for a non-negative integer, committed on Enter or focus loss.
-fn integer(
+/// Row with a slider for a generation setting. Dragging moves the slider;
+/// releasing it applies the value, since each change regenerates the board.
+fn slider(
     caption: &'static str,
-    read: fn(&HexPathsSettings) -> u32,
-    write: fn(&mut HexPathsSettings, u32),
-) -> impl Scene {
-    bsn! {
-        Node { align_items: AlignItems::Center, column_gap: px(8) }
-        Children [
-            (label_small(caption) Node { width: percent(65) }),
-            (@FeathersNumberInput { @number_format: NumberFormat::I64 }
-                template(move |_| Ok(NumberSetting::<u32> { read, write }))
-                on(set_integer)),
-        ]
-    }
-}
-
-/// Row for a floating-point setting, committed on Enter or focus loss.
-fn decimal(
-    caption: &'static str,
+    min: f32,
+    max: f32,
+    step: f32,
     read: fn(&HexPathsSettings) -> f32,
     write: fn(&mut HexPathsSettings, f32),
 ) -> impl Scene {
+    let precision = if step < 1. { 2 } else { 0 };
     bsn! {
         Node { align_items: AlignItems::Center, column_gap: px(8) }
         Children [
-            (label_small(caption) Node { width: percent(65) }),
-            (@FeathersNumberInput
-                template(move |_| Ok(NumberSetting::<f32> { read, write }))
-                on(set_decimal)),
+            (label_small(caption) Node { width: percent(50) }),
+            (@FeathersSlider { @min: min, @max: max, @value: min }
+                Node { flex_grow: 1. }
+                SliderStep(step) SliderPrecision(precision)
+                template(move |_| Ok(SettingSlider { read, write }))
+                on(set_slider)),
         ]
     }
 }
 
-/// Applies an integer input only when its final value fits the setting's type.
-fn set_integer(
-    change: On<ValueChange<i64>>,
-    fields: Query<&NumberSetting<u32>>,
-    mut settings: ResMut<HexPathsSettings>,
-) {
-    if change.is_final
-        && let Ok(value) = u32::try_from(change.value)
-        && let Ok(field) = fields.get(change.source)
-    {
-        let mut next = settings.clone();
-        (field.write)(&mut next, value);
-        settings.set_if_neq(next);
-    }
-}
-
-/// Applies a final decimal input; the generator reports invalid settings.
-fn set_decimal(
+/// Shows a slider's value while it is dragged and applies it on release.
+fn set_slider(
     change: On<ValueChange<f32>>,
-    fields: Query<&NumberSetting<f32>>,
+    mut commands: Commands,
+    fields: Query<&SettingSlider>,
     mut settings: ResMut<HexPathsSettings>,
 ) {
+    commands.entity(change.source).insert(SliderValue(change.value));
     if change.is_final
         && let Ok(field) = fields.get(change.source)
     {
@@ -178,24 +156,13 @@ pub(super) fn sync_settings(
     settings: Res<HexPathsSettings>,
     focus: Res<InputFocus>,
     mut commands: Commands,
-    integers: Query<(Entity, Ref<NumberSetting<u32>>)>,
-    decimals: Query<(Entity, Ref<NumberSetting<f32>>)>,
+    sliders: Query<(Entity, Ref<SettingSlider>, &SliderValue)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
 ) {
-    for (entity, field) in &integers {
-        if settings.is_changed() || field.is_added() {
-            commands.trigger(UpdateNumberInput {
-                entity,
-                value: NumberInputValue::I64((field.read)(&settings) as i64),
-            });
-        }
-    }
-    for (entity, field) in &decimals {
-        if settings.is_changed() || field.is_added() {
-            commands.trigger(UpdateNumberInput {
-                entity,
-                value: NumberInputValue::F32((field.read)(&settings)),
-            });
+    for (entity, field, value) in &sliders {
+        let setting = (field.read)(&settings);
+        if (settings.is_changed() || field.is_added()) && value.0 != setting {
+            commands.entity(entity).insert(SliderValue(setting));
         }
     }
     for (entity, mut input, marker) in &mut seeds {
@@ -223,8 +190,8 @@ pub(super) fn update_stats(
         return;
     };
     let mut value = format!(
-        "View: {:?} | Focus: {:?}\nSeed: {}",
-        view.view, view.focus, stats.seed
+        "View: {:?} | Focus: {:?} | Nodes revealed: {}\nSeed: {}",
+        view.view, view.focus, view.reveal_nodes, stats.seed
     );
     if let Some(error) = &stats.error {
         value.push_str(&format!("\nGeneration error: {error}"));

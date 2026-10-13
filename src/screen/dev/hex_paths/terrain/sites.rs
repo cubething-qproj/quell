@@ -58,12 +58,14 @@ pub fn views(mesh: &HexMesh, raster: &Raster, radius: f32, eye: f32) -> (Vec<f32
     (open, overlook)
 }
 
-/// Each value's rank, scaled to 0..=1.
-pub fn rank(values: &[f32]) -> Vec<f32> {
-    let mut order: Vec<usize> = (0..values.len()).collect();
+/// Each value's rank among the tiles in `among`, scaled to 0..=1; zero
+/// elsewhere. Ranking only playable tiles keeps the margin, which has no
+/// views, from crowding the bottom of the scale.
+pub fn rank(values: &[f32], among: &[bool]) -> Vec<f32> {
+    let mut order: Vec<usize> = (0..values.len()).filter(|&i| among[i]).collect();
     order.sort_by(|&a, &b| values[a].total_cmp(&values[b]));
+    let scale = (order.len().max(2) - 1) as f32;
     let mut ranks = vec![0.; values.len()];
-    let scale = (values.len().max(2) - 1) as f32;
     for (rank, index) in order.into_iter().enumerate() {
         ranks[index] = rank as f32 / scale;
     }

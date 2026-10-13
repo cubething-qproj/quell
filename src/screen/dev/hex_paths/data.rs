@@ -13,6 +13,18 @@ pub struct TerrainSurface;
 #[derive(Component)]
 pub struct Billboard;
 
+/// The tile of the pad a marker stands on.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Pad(pub usize);
+
+/// What a billboard marks.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Marker {
+    Spawn,
+    Poi,
+    Bench,
+}
+
 /// Camera rendering only the hex board.
 #[derive(Component)]
 pub struct HexPathsCamera;
@@ -30,6 +42,7 @@ pub struct Billboards {
     /// Upright quad standing on its origin.
     pub quad: Handle<Mesh>,
     pub spawn: Handle<StandardMaterial>,
+    pub bench: Handle<StandardMaterial>,
     /// A node whose type is not yet known.
     pub unknown: Handle<StandardMaterial>,
 }
@@ -56,11 +69,11 @@ pub struct PanelState {
     pub seed_error: Option<&'static str>,
 }
 
-/// Typed binding between a number input and a generation setting.
+/// Binding between a slider and a generation setting.
 #[derive(Component, Clone, Copy)]
-pub struct NumberSetting<T: Send + Sync + 'static> {
-    pub read: fn(&HexPathsSettings) -> T,
-    pub write: fn(&mut HexPathsSettings, T),
+pub struct SettingSlider {
+    pub read: fn(&HexPathsSettings) -> f32,
+    pub write: fn(&mut HexPathsSettings, f32),
 }
 
 /// Sizes and colors for the board preview and its debug panel.
@@ -83,8 +96,12 @@ pub struct HexPathsAppearance {
     pub margin_veil: f32,
     /// Direction the hillshade light comes from.
     pub light: Vec3,
-    /// Colour of the best tiles in the suitability and bench score views.
+    /// Colour of the most buildable tiles in the suitability view.
     pub score: Color,
+    /// Colour of the quietest bench sites in the bench score view.
+    pub quiet: Color,
+    /// Colour of the best overlooks in the bench score view.
+    pub overlook: Color,
     /// Height of node and player billboards, in edge lengths.
     pub billboard_height: f32,
     /// Colour of the steepest edges in the cost view.
@@ -117,6 +134,8 @@ impl Default for HexPathsAppearance {
             margin_veil: 0.45,
             light: Vec3::new(-1., 1.4, 1.),
             score: rgb(40, 90, 170),
+            quiet: rgb(40, 90, 170),
+            overlook: rgb(60, 150, 70),
             billboard_height: 1.5,
             cost: rgb(122, 28, 28),
             cost_percentile: 0.98,
@@ -153,8 +172,18 @@ pub enum TerrainView {
     /// Buildable ground, as node placement sees it, tints towards
     /// `HexPathsAppearance::score`.
     Suitability,
-    /// Good bench sites tint towards `HexPathsAppearance::score`.
+    /// Good bench sites on paper: `HexPathsAppearance::quiet` for enclosed
+    /// spots, through to `overlook` for views down.
     BenchScore,
+}
+
+/// How a view colours the terrain, per mesh point (corners, then centres).
+pub struct Tint {
+    /// Replaces the height colours underneath, if set.
+    pub base: Option<LinearRgba>,
+    pub colours: Vec<LinearRgba>,
+    /// How far each point leans towards its colour, 0–1.
+    pub amounts: Vec<f32>,
 }
 
 /// What the camera orbits and follows.
@@ -165,6 +194,8 @@ pub enum CameraFocus {
     Terrain,
     /// The player, from close by. Spawn until there is a player.
     Player,
+    /// The node on this tile, from close by.
+    Node(usize),
 }
 
 /// How the board is viewed. Editing these never regenerates a board.
@@ -174,6 +205,8 @@ pub struct HexPathsView {
     /// Which measure colours the terrain.
     pub view: TerrainView,
     pub focus: CameraFocus,
+    /// Shows every node's type, not just those the player has reached.
+    pub reveal_nodes: bool,
     /// Camera pitch below the horizon on entering the screen, in degrees.
     pub initial_tilt: f32,
     /// Distance from the camera to the middle of a new board.
@@ -187,6 +220,7 @@ impl Default for HexPathsView {
         Self {
             view: TerrainView::default(),
             focus: CameraFocus::default(),
+            reveal_nodes: false,
             initial_tilt: 60.,
             initial_distance: 30.,
             player_distance: 10.,
@@ -207,14 +241,14 @@ impl Board {
     pub fn focus(&self, focus: CameraFocus) -> Vec3 {
         match focus {
             CameraFocus::Terrain => self.centre,
-            CameraFocus::Player => {
-                let spawn = self.terrain.spawn;
-                super::terrain::world(
-                    self.terrain.mesh.centers[spawn],
-                    self.terrain.pad_height(spawn),
-                )
-            }
+            CameraFocus::Player => self.pad(self.terrain.spawn),
+            CameraFocus::Node(tile) => self.pad(tile),
         }
+    }
+
+    /// The middle of the pad on `tile`, at its height.
+    pub fn pad(&self, tile: usize) -> Vec3 {
+        super::terrain::world(self.terrain.mesh.centers[tile], self.terrain.pad_height(tile))
     }
 
     /// Finds the middle of the playable area of `terrain`.
@@ -262,8 +296,10 @@ pub struct HexPathsSettings {
     pub roughness: f32,
     /// Blend towards ridged noise, 0–1.
     pub ridges: f32,
-    /// Nodes to place, besides spawn.
-    pub nodes: u32,
+    /// Points of interest to place, on buildable ground.
+    pub pois: u32,
+    /// Benches to place, at the best views and hollows.
+    pub benches: u32,
     /// How strongly node sites prefer buildable ground; 0 ignores it.
     pub spread: f32,
     /// Bench preference, 0–1: 0 favours quiet, enclosed spots, 1 overlooks.
@@ -280,8 +316,9 @@ impl Default for HexPathsSettings {
             relief: 6.,
             roughness: 0.5,
             ridges: 0.3,
-            nodes: 9,
-            spread: 1.,
+            pois: 6,
+            benches: 3,
+            spread: 2.,
             view: 0.7,
         }
     }
@@ -332,6 +369,9 @@ pub struct HexTerrainTuning {
     pub view_radius: f32,
     /// Eye height above the ground, for views.
     pub eye_height: f32,
+    /// Exponent on the quiet and overlook ranks before they blend into the
+    /// bench score. 1 is the prototype; higher keeps only the extremes.
+    pub bench_sharpness: f32,
 }
 
 impl Default for HexTerrainTuning {
@@ -345,6 +385,7 @@ impl Default for HexTerrainTuning {
             min_spacing: 3.,
             view_radius: 6.,
             eye_height: 0.5,
+            bench_sharpness: 4.,
         }
     }
 }
@@ -358,6 +399,7 @@ impl HexTerrainTuning {
             (self.resolution > 0., "resolution must be positive"),
             (self.octaves > 0, "octaves must be positive"),
             (self.valleys > 0., "valleys must be positive"),
+            (self.bench_sharpness > 0., "bench sharpness must be positive"),
         ]
         .into_iter()
         .find(|(ok, _)| !ok)

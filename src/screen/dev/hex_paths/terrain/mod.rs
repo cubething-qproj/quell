@@ -24,13 +24,18 @@ pub struct Terrain {
     pub heights: Vec<f32>,
     /// How buildable each tile is, 0–1.
     pub suitability: Vec<f32>,
-    /// How good a bench each tile would make, 0–1, blending quiet and
-    /// overlook by the `view` knob.
-    pub bench_score: Vec<f32>,
+    /// The quiet share of each tile's bench score: how enclosed it is,
+    /// sharpened and weighted by `1 - view`.
+    pub bench_quiet: Vec<f32>,
+    /// The overlook share of each tile's bench score: how far it looks down
+    /// on its surroundings, sharpened and weighted by `view`.
+    pub bench_overlook: Vec<f32>,
     /// Spawn's tile.
     pub spawn: usize,
-    /// Each node's tile, untyped until trails exist.
-    pub nodes: Vec<usize>,
+    /// Each point of interest's tile, placed on buildable ground.
+    pub pois: Vec<usize>,
+    /// Each bench's tile, placed by bench score.
+    pub benches: Vec<usize>,
 }
 
 impl Terrain {
@@ -45,12 +50,19 @@ impl Terrain {
         let heights: Vec<f32> = mesh.positions.iter().map(|&p| raster.sample(p)).collect();
         let suitability = sites::suitability(&mesh, &heights);
         let (open, overlook) = sites::views(&mesh, &raster, tuning.view_radius, tuning.eye_height);
-        let (quiet, overlook) = (sites::rank(&open), sites::rank(&overlook));
-        let bench_score = quiet
-            .iter()
-            .zip(&overlook)
-            .map(|(q, o)| (1. - settings.view) * (1. - q) + settings.view * o)
-            .collect();
+        let enclosed: Vec<f32> = open.iter().map(|o| 1. - o).collect();
+        let quiet = sites::rank(&enclosed, &mesh.playable);
+        let overlook = sites::rank(&overlook, &mesh.playable);
+        // Sharpened so only the most enclosed spots and the best overlooks
+        // score well, not ground that is middling at both.
+        let share = |ranks: Vec<f32>, weight: f32| -> Vec<f32> {
+            ranks
+                .into_iter()
+                .map(|r| weight * r.powf(tuning.bench_sharpness))
+                .collect()
+        };
+        let bench_quiet = share(quiet, 1. - settings.view);
+        let bench_overlook = share(overlook, settings.view);
         let spawn = mesh
             .tile_at(
                 settings.columns as i32 / 2,
@@ -58,12 +70,24 @@ impl Terrain {
                 tuning.margin,
             )
             .expect("the middle of the board is a tile");
-        let score: Vec<f32> = suitability.iter().map(|s| s.powf(settings.spread)).collect();
-        let nodes = sites::farthest(
+        // Points of interest take the buildable ground first; benches then
+        // take the best views and hollows left between them.
+        let buildable: Vec<f32> = suitability.iter().map(|s| s.powf(settings.spread)).collect();
+        let pois = sites::farthest(
             &mesh,
             &[spawn],
-            &score,
-            settings.nodes as usize,
+            &buildable,
+            settings.pois as usize,
+            tuning.min_spacing,
+            rng,
+        );
+        let bench_score: Vec<f32> = bench_quiet.iter().zip(&bench_overlook).map(|(q, o)| q + o).collect();
+        let taken: Vec<usize> = std::iter::once(spawn).chain(pois.iter().copied()).collect();
+        let benches = sites::farthest(
+            &mesh,
+            &taken,
+            &bench_score,
+            settings.benches as usize,
             tuning.min_spacing,
             rng,
         );
@@ -71,9 +95,11 @@ impl Terrain {
             mesh,
             heights,
             suitability,
-            bench_score,
+            bench_quiet,
+            bench_overlook,
             spawn,
-            nodes,
+            pois,
+            benches,
         }
     }
 
@@ -148,8 +174,10 @@ mod tests {
         let tuning = HexTerrainTuning::default();
         let terrain = Terrain::generate(&settings, &tuning, &mut StdRng::seed_from_u64(3));
         let interior = terrain.mesh.interior();
-        assert_eq!(terrain.nodes.len(), settings.nodes as usize);
-        let pads: Vec<usize> = std::iter::once(terrain.spawn).chain(terrain.nodes.clone()).collect();
+        assert_eq!(terrain.pois.len(), settings.pois as usize);
+        assert_eq!(terrain.benches.len(), settings.benches as usize);
+        let nodes: Vec<usize> = terrain.pois.iter().chain(&terrain.benches).copied().collect();
+        let pads: Vec<usize> = std::iter::once(terrain.spawn).chain(nodes.clone()).collect();
         for (i, &a) in pads.iter().enumerate() {
             assert!(terrain.mesh.playable[a]);
             for &b in &pads[i + 1..] {
@@ -157,7 +185,7 @@ mod tests {
                 assert!(apart >= tuning.min_spacing);
             }
         }
-        assert!(terrain.nodes.iter().all(|&n| interior[n]));
+        assert!(nodes.iter().all(|&n| interior[n]));
     }
 
     #[test]

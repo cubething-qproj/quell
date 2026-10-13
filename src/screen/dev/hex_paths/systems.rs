@@ -86,7 +86,8 @@ pub(super) fn spawn_surface(
     ));
 }
 
-/// Marks spawn and every node with a billboard on its pad.
+/// Marks spawn and every node with a billboard on its pad; see
+/// [`paint_markers`] for what each shows.
 pub(super) fn spawn_markers(
     mut commands: Commands,
     board: Res<Board>,
@@ -97,21 +98,88 @@ pub(super) fn spawn_markers(
         return;
     };
     let terrain = &board.terrain;
-    let pads = std::iter::once((terrain.spawn, &billboards.spawn))
-        .chain(terrain.nodes.iter().map(|&n| (n, &billboards.unknown)));
-    for (tile, material) in pads {
+    let pads = std::iter::once((terrain.spawn, Marker::Spawn))
+        .chain(terrain.pois.iter().map(|&n| (n, Marker::Poi)))
+        .chain(terrain.benches.iter().map(|&n| (n, Marker::Bench)));
+    for (tile, marker) in pads {
         commands.spawn((
             Name::new("Marker"),
+            marker,
+            Pad(tile),
             Billboard,
             Mesh3d(billboards.quad.clone()),
-            MeshMaterial3d(material.clone()),
-            Transform::from_translation(world(
-                terrain.mesh.centers[tile],
-                terrain.pad_height(tile),
-            )),
+            MeshMaterial3d(billboards.unknown.clone()),
+            Transform::from_translation(board.pad(tile)),
             RenderLayers::layer(31),
             ChildOf(root),
         ));
+    }
+}
+
+/// Shows each marker's billboard: spawn always, node types only when
+/// revealed.
+pub(super) fn paint_markers(
+    view: Res<HexPathsView>,
+    billboards: Res<Billboards>,
+    mut markers: Query<(Ref<Marker>, &mut MeshMaterial3d<StandardMaterial>)>,
+) {
+    for (marker, mut material) in &mut markers {
+        if !view.is_changed() && !marker.is_added() {
+            continue;
+        }
+        let handle = match *marker {
+            Marker::Spawn => &billboards.spawn,
+            Marker::Bench if view.reveal_nodes => &billboards.bench,
+            Marker::Poi | Marker::Bench => &billboards.unknown,
+        };
+        if material.0 != *handle {
+            material.0 = handle.clone();
+        }
+    }
+}
+
+/// Focuses the camera on the marker under a left click: spawn focuses the
+/// player, a node focuses that node.
+pub(super) fn pick_focus(
+    mouse: Res<ButtonInput<MouseButton>>,
+    window: Single<&Window, With<PrimaryWindow>>,
+    appearance: Res<HexPathsAppearance>,
+    camera: Single<(&Camera, &GlobalTransform), With<HexPathsCamera>>,
+    markers: Query<(&Marker, &Pad, &GlobalTransform)>,
+    mut view: ResMut<HexPathsView>,
+) {
+    let (camera, camera_transform) = *camera;
+    let Some(ray) = window
+        .cursor_position()
+        .filter(|_| mouse.just_pressed(MouseButton::Left))
+        .filter(|&cursor| {
+            camera
+                .logical_viewport_rect()
+                .is_some_and(|rect| rect.contains(cursor))
+        })
+        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
+    else {
+        return;
+    };
+    // Nearest billboard whose middle passes within half its height of the ray.
+    let reach = appearance.billboard_height / 2.;
+    let hit = markers
+        .iter()
+        .filter_map(|(marker, pad, transform)| {
+            let middle = transform.translation() + Vec3::Y * reach;
+            let along = (middle - ray.origin).dot(*ray.direction);
+            let miss = middle.distance(ray.get_point(along));
+            (along > 0. && miss < reach).then_some((along, marker, pad))
+        })
+        .min_by(|a, b| a.0.total_cmp(&b.0));
+    if let Some((_, marker, pad)) = hit {
+        let focus = match marker {
+            Marker::Spawn => CameraFocus::Player,
+            Marker::Poi | Marker::Bench => CameraFocus::Node(pad.0),
+        };
+        if view.focus != focus {
+            view.focus = focus;
+        }
     }
 }
 
@@ -164,7 +232,7 @@ pub(super) fn aim_camera(
     *aimed = Some(view.focus);
     let distance = match view.focus {
         CameraFocus::Terrain => view.initial_distance,
-        CameraFocus::Player => view.player_distance,
+        CameraFocus::Player | CameraFocus::Node(_) => view.player_distance,
     };
     camera.translation = board.focus(view.focus) - camera.forward() * distance;
 }
@@ -290,16 +358,17 @@ fn surface_mesh(
         .collect();
     let light = appearance.light.normalize();
     let paper = appearance.paper.to_linear();
-    let (tint, amounts) = view_tint(terrain, settings, tuning, view, appearance);
+    let tint = view_tint(terrain, settings, tuning, view, appearance);
     let colours: Vec<[f32; 4]> = heights
         .iter()
+        .enumerate()
         .zip(&normals)
         .zip(&inside)
-        .zip(&amounts)
-        .map(|(((&h, &n), &inside), &amount)| {
+        .map(|(((i, &h), &n), &inside)| {
             let shade =
                 appearance.shade_floor + appearance.shade_gain * n.dot(light).max(0.) / light.y;
-            let lit = (appearance.ramp(h) * shade).mix(&tint, amount);
+            let base = tint.base.unwrap_or_else(|| appearance.ramp(h));
+            let lit = (base * shade).mix(&tint.colours[i], tint.amounts[i]);
             let veil = if inside { 0. } else { appearance.margin_veil };
             lit.mix(&paper, veil).with_alpha(1.).to_f32_array()
         })
@@ -324,27 +393,49 @@ fn view_tint(
     tuning: &HexTerrainTuning,
     view: TerrainView,
     appearance: &HexPathsAppearance,
-) -> (LinearRgba, Vec<f32>) {
+) -> Tint {
     let mesh = &terrain.mesh;
-    // Per-tile measures tint the best ground.
-    let score = |tiles: Vec<f32>| (appearance.score.to_linear(), tile_amounts(terrain, &tiles));
+    let points = mesh.positions.len() + mesh.tiles.len();
+    let single = |colour: Color, amounts: Vec<f32>| Tint {
+        base: None,
+        colours: vec![colour.to_linear(); points],
+        amounts,
+    };
     match view {
-        TerrainView::Heightmap => (
-            LinearRgba::NONE,
-            vec![0.; mesh.positions.len() + mesh.tiles.len()],
-        ),
-        TerrainView::Cost => (
-            appearance.cost.to_linear(),
+        TerrainView::Heightmap => single(Color::NONE, vec![0.; points]),
+        TerrainView::Cost => single(
+            appearance.cost,
             corner_amounts(terrain, &steepness(terrain, tuning, appearance)),
         ),
-        TerrainView::Suitability => score(
-            terrain
-                .suitability
-                .iter()
-                .map(|s| s.powf(settings.spread))
-                .collect(),
+        TerrainView::Suitability => single(
+            appearance.score,
+            tile_amounts(
+                terrain,
+                &terrain
+                    .suitability
+                    .iter()
+                    .map(|s| s.powf(settings.spread))
+                    .collect::<Vec<_>>(),
+            ),
         ),
-        TerrainView::BenchScore => score(terrain.bench_score.clone()),
+        TerrainView::BenchScore => {
+            let quiet = tile_amounts(terrain, &terrain.bench_quiet);
+            let overlook = tile_amounts(terrain, &terrain.bench_overlook);
+            let (quiet_colour, overlook_colour) =
+                (appearance.quiet.to_linear(), appearance.overlook.to_linear());
+            Tint {
+                base: Some(appearance.paper.to_linear()),
+                colours: quiet
+                    .iter()
+                    .zip(&overlook)
+                    .map(|(q, o)| {
+                        let towards_overlook = o / (q + o).max(f32::EPSILON);
+                        quiet_colour.mix(&overlook_colour, towards_overlook)
+                    })
+                    .collect(),
+                amounts: quiet.iter().zip(&overlook).map(|(q, o)| (q + o).min(1.)).collect(),
+            }
+        }
     }
 }
 

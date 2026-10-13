@@ -23,7 +23,9 @@ impl Screen for HexPathsScreen {
                         .or_else(resource_changed::<HexPathsAppearance>),
                 ),
                 systems::spawn_markers.run_if(resource_exists_and_changed::<Board>),
+                systems::paint_markers,
                 systems::fit_viewport,
+                systems::pick_focus,
                 systems::aim_camera,
                 systems::orbit_camera,
                 systems::face_camera,
@@ -99,6 +101,7 @@ fn init(
             Mesh::from(Rectangle::new(height / 2., height)).translated_by(Vec3::Y * height / 2.),
         ),
         spawn: billboard("spawn"),
+        bench: billboard("bench"),
         unknown: billboard("unknown"),
     });
     commands.queue_spawn_scene(panel::scene(appearance.panel_width));
