@@ -11,6 +11,7 @@
 //! text. [`update_stats`] reports [`Board`]'s window and layout measurements
 //! alongside [`BoardStats`] and [`PanelState`] errors.
 
+use super::walking::data::WalkingSettings;
 use super::{data::*, layout::NodeKind, systems};
 use crate::prelude::*;
 use bevy::{
@@ -63,6 +64,9 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 ]),
                 (@FeathersButton { @caption: bsn! { label("Reveal nodes") } }
                     on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.reveal_nodes = !v.reveal_nodes; })),
+                (@FeathersButton { @caption: bsn! { label("Toggle walking") } }
+                    on(|_: On<Activate>, mut walking: ResMut<WalkingSettings>| { walking.enabled = !walking.enabled; })),
+                label_small("Walking: hover a path tile to preview its destination, then click. Layout edits end the walk."),
                 label_small("Layout (same terrain; regenerate round the focus)"),
                 (Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
                     (@FeathersButton { @caption: bsn! { label("New layout") } } on(relayout(None))),
@@ -251,14 +255,15 @@ pub(super) fn update_stats(
     board: Option<Res<Board>>,
     view: Res<HexPathsView>,
     panel: Res<PanelState>,
+    walking: Res<WalkingSettings>,
     mut texts: Query<&mut Text, With<StatsText>>,
 ) {
     let Some(stats) = stats else {
         return;
     };
     let mut value = format!(
-        "View: {:?} | Focus: {:?} | Nodes revealed: {}\nSeed: {}",
-        view.view, view.focus, view.reveal_nodes, stats.seed
+        "View: {:?} | Focus: {:?} | Nodes revealed: {}\nWalking: {}\nSeed: {}",
+        view.view, view.focus, view.reveal_nodes, walking.enabled, stats.seed
     );
     if let Some(board) = board {
         let layout = &board.layout;

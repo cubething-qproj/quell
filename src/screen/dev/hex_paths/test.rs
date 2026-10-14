@@ -3,7 +3,8 @@
 //! [`Fixture`] uses synthetic ground for presentation checks and a small
 //! eroded region for [`spawn_board`](systems::spawn_board) replacement checks.
 //! It includes surface/marker observers and reveal updates without a renderer
-//! or panel. Pointer events are injected directly. It steps Update and PostUpdate;
+//! or panel. Walking tests include session setup, movement, and replacement.
+//! Pointer events are injected directly. It steps Update and PostUpdate;
 //! unload is called directly. These tests do not exercise the full screen
 //! lifecycle, ray casting, UI occlusion, rendered camera behaviour, or asset readiness.
 
@@ -11,7 +12,11 @@ use super::{
     data::*,
     layout::{Context, Layout},
     screen, systems,
-    terrain::tests::flat,
+    terrain::{tests::flat, world as world_position},
+    walking::{
+        self,
+        data::{Walk, WalkingSettings},
+    },
 };
 use bevy::{
     camera::NormalizedRenderTarget,
@@ -63,6 +68,7 @@ impl Fixture {
             .init_resource::<RegionCache>()
             .init_resource::<HexPathsView>()
             .init_resource::<HexPathsAppearance>()
+            .init_resource::<WalkingSettings>()
             .init_resource::<Assets<Mesh>>()
             .init_resource::<Assets<StandardMaterial>>()
             .add_observer(systems::spawn_surface)
@@ -70,12 +76,18 @@ impl Fixture {
             .add_systems(
                 Update,
                 (
+                    walking::systems::sync_player.run_if(
+                        resource_removed::<Board>
+                            .or_else(resource_exists_and_changed::<Board>)
+                            .or_else(resource_changed::<WalkingSettings>),
+                    ),
                     systems::refresh_preview.run_if(
                         resource_exists_and_changed::<Board>
                             .or_else(resource_changed::<HexPathsView>)
                             .or_else(resource_changed::<HexPathsAppearance>),
                     ),
                     systems::paint_markers.run_if(resource_changed::<HexPathsView>),
+                    walking::systems::advance_player,
                 )
                     .chain(),
             );
@@ -190,6 +202,17 @@ impl Fixture {
 
     /// Injects the event delivered after picking, without exercising the ray-casting backend.
     fn press_marker(&mut self, marker: Entity, camera: Entity, button: PointerButton) {
+        self.press_at(marker, camera, button, None);
+    }
+
+    /// Injects a picked world position without running the mesh ray-casting backend.
+    fn press_at(
+        &mut self,
+        target: Entity,
+        camera: Entity,
+        button: PointerButton,
+        position: Option<Vec3>,
+    ) {
         self.app.world_mut().trigger(Pointer::new(
             PointerId::Mouse,
             Location {
@@ -202,10 +225,23 @@ impl Fixture {
             Press {
                 button,
                 count: 1,
-                hit: HitData::new(camera, 1., None, None),
+                hit: HitData::new(camera, 1., position, None),
             },
-            marker,
+            target,
         ));
+    }
+
+    /// Enters walking mode and returns the separately owned player entity.
+    fn enter_walking(&mut self) -> Entity {
+        let mut settings = self.app.world_mut().resource_mut::<WalkingSettings>();
+        settings.enabled = true;
+        settings.speed = 1.;
+        self.tick();
+        let world = self.app.world_mut();
+        world
+            .query_filtered::<Entity, With<Walk>>()
+            .single(world)
+            .unwrap()
     }
 }
 
@@ -339,4 +375,104 @@ fn marker_pointer_presses_only_focus_from_the_board_camera() {
         fixture.app.world().resource::<HexPathsView>().focus,
         CameraFocus::Player
     );
+}
+
+#[test]
+fn surface_presses_plan_walks_without_rebuilding_the_board() {
+    let mut fixture = Fixture::presentation();
+    let player = fixture.enter_walking();
+    let world = fixture.app.world_mut();
+    let surface = world
+        .query_filtered::<Entity, With<TerrainSurface>>()
+        .single(world)
+        .unwrap();
+    let camera = world.spawn(HexPathsCamera).id();
+    let other = world.spawn_empty().id();
+    let corner = world.get::<Walk>(player).unwrap().corner;
+    let board = world.resource::<Board>();
+    let settings = world.resource::<HexPathsSettings>();
+    let tuning = world.resource::<HexTerrainTuning>();
+    let context = Context {
+        terrain: &board.terrain,
+        settings,
+        tuning,
+    };
+    let mesh = &board.terrain.mesh;
+    let target_corner = mesh.tile_corners[board.layout.spawn]
+        .into_iter()
+        .find(|&c| c != corner)
+        .unwrap();
+    let point = mesh.centers[board.layout.spawn].lerp(mesh.positions[target_corner], 0.9);
+    let target = (target_corner, world_position(point, 0.));
+    let preview = world
+        .get::<Walk>(player)
+        .unwrap()
+        .destination(context, &board.layout, target.1)
+        .unwrap();
+    assert_eq!(preview.tile, board.layout.spawn);
+    assert_eq!(preview.corner, target_corner);
+    fixture.press_at(surface, camera, PointerButton::Secondary, Some(target.1));
+    fixture.press_at(surface, other, PointerButton::Primary, Some(target.1));
+    fixture.press_at(surface, camera, PointerButton::Primary, None);
+    assert!(
+        fixture
+            .app
+            .world()
+            .get::<Walk>(player)
+            .unwrap()
+            .route
+            .is_empty()
+    );
+    fixture.press_at(surface, camera, PointerButton::Primary, Some(target.1));
+    assert_eq!(
+        fixture
+            .app
+            .world()
+            .get::<Walk>(player)
+            .unwrap()
+            .route
+            .back(),
+        Some(&target.0)
+    );
+
+    let before = fixture
+        .app
+        .world()
+        .get::<Transform>(player)
+        .unwrap()
+        .translation;
+    fixture.app.step(
+        Duration::from_secs(2),
+        [Update.intern(), PostUpdate.intern()],
+    );
+    let world = fixture.app.world_mut();
+    assert_ne!(world.get::<Transform>(player).unwrap().translation, before);
+    assert!(
+        world.get_entity(surface).is_ok(),
+        "movement does not rebuild the terrain"
+    );
+    let progress = world.get::<Walk>(player).unwrap().progress;
+    world.resource_mut::<HexPathsView>().reveal_nodes = true;
+    world.resource_mut::<HexPathsAppearance>().vertical_scale *= 2.;
+    fixture.tick();
+    assert_eq!(
+        fixture.app.world().get::<Walk>(player).unwrap().progress,
+        progress
+    );
+}
+
+#[test]
+fn layout_changes_and_missing_boards_end_walking() {
+    let mut fixture = Fixture::presentation();
+    let player = fixture.enter_walking();
+    fixture.app.world_mut().resource_mut::<Board>().regenerated = true;
+    fixture.tick();
+    assert!(fixture.app.world().get_entity(player).is_err());
+    assert!(!fixture.app.world().resource::<WalkingSettings>().enabled);
+
+    let player = fixture.enter_walking();
+    fixture.app.world_mut().remove_resource::<Board>();
+    fixture.tick();
+    assert!(fixture.app.world().get_entity(player).is_err());
+    assert!(!fixture.app.world().resource::<WalkingSettings>().enabled);
 }

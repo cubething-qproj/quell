@@ -7,12 +7,14 @@
 //!
 //! [`refresh_preview`] translates resource changes into rebuild events.
 //! [`spawn_surface`] draws levelled layout heights, while [`spawn_markers`] and
-//! [`paint_markers`] display landmark roles. Picking edits [`HexPathsView`];
+//! [`paint_markers`] display landmark roles. Marker picking edits [`HexPathsView`];
+//! surface picking requests a route from [`Walk`].
 //! camera systems resolve [`CameraFocus`] into an exaggerated world target.
 //! [`draw_board`] overlays true topology as gizmos. [`screen`](super::screen) orders
 //! these systems so generation precedes rendering and focus precedes aiming.
 //! Visual height scaling never enters terrain costs, sight tests, or pace.
 
+use super::walking::{data::Walk, systems::pick_destination};
 use super::{
     data::*,
     layout::{Context, Layout, NodeKind, regeneration_seed},
@@ -194,25 +196,28 @@ pub(super) fn spawn_surface(
     for surface in &surfaces {
         commands.entity(surface).despawn();
     }
-    commands.spawn((
-        TerrainSurface,
-        Pickable::IGNORE,
-        Name::new("Terrain"),
-        Mesh3d(meshes.add(board.surface_mesh(&settings, &tuning, view.view, &appearance))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            unlit: true,
-            ..default()
-        })),
-        RenderLayers::from(RenderLayer::HEX_PREVIEW),
-        ChildOf(*root),
-    ));
+    commands
+        .spawn((
+            TerrainSurface,
+            Pickable::default(),
+            Name::new("Terrain"),
+            Mesh3d(meshes.add(board.surface_mesh(&settings, &tuning, view.view, &appearance))),
+            MeshMaterial3d(materials.add(StandardMaterial {
+                unlit: true,
+                ..default()
+            })),
+            RenderLayers::from(RenderLayer::HEX_PREVIEW),
+            ChildOf(*root),
+        ))
+        .observe(pick_destination);
 }
 
 /// Replaces billboard markers for spawn/player, POIs, and benches on the board.
 ///
 /// Positions each [`Pad`] at its levelled centre using [`Board::pad`]. The
 /// spawn/player distinction follows [`Board::regenerated`], rather than the
-/// layout count. [`Marker::material`] sets each initial image; [`paint_markers`]
+/// layout count. While walking, spawn remains a landmark and the separate
+/// [`Walk`] entity displays the moving player. [`Marker::material`] sets each initial image; [`paint_markers`]
 /// updates reveal changes. Observes [`RebuildMarkers`]; crossing pads remain
 /// outlines drawn by [`draw_board`].
 pub(super) fn spawn_markers(
@@ -224,12 +229,13 @@ pub(super) fn spawn_markers(
     appearance: Res<HexPathsAppearance>,
     root: Single<Entity, With<BoardRoot>>,
     markers: Query<Entity, With<Marker>>,
+    walkers: Query<(), With<Walk>>,
 ) {
     for marker in &markers {
         commands.entity(marker).despawn();
     }
     let layout = &board.layout;
-    let start = if board.regenerated {
+    let start = if board.regenerated && walkers.is_empty() {
         Marker::Player
     } else {
         Marker::Spawn

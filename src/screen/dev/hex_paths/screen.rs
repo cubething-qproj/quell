@@ -3,21 +3,24 @@
 //! Loading creates the camera, billboard assets, and panel and saves the UI
 //! camera's clear colour. Readiness marks settings changed; Update is the sole
 //! full-generation path. Chained systems generate [`Board`] before triggering
-//! surface and marker observers, then update camera and overlays. Pointer
-//! observers attached to markers select focus before the screen update.
+//! surface and marker observers, then advance the walker and update camera
+//! and overlays. Pointer observers select marker focus or a surface destination;
+//! the hover overlay previews that destination. Board changes end walking
+//! before its corner indices can be reused with another layout.
 //!
 //! Unload restores the UI camera and removes play-time resources, including
 //! the board and billboard handles; it clears the cached region and panel
 //! errors. Screen-scoped entity cleanup removes the preview hierarchy.
 //! Settings, tuning, appearance, and view resources remain registered.
 
-use super::{data::*, panel, systems};
+use super::{data::*, panel, systems, walking};
 use crate::prelude::*;
 use bevy::{
     feathers::{dark_theme::create_dark_theme, theme::UiTheme},
     prelude::*,
 };
 use bevy_editor_cam::prelude::{EditorCam, EnabledMotion};
+use walking::data::WalkingSettings;
 
 /// The dev [`Screen`] combining generation, inspection controls, and a 3D preview.
 ///
@@ -39,17 +42,24 @@ impl Screen for HexPathsScreen {
                     resource_changed::<HexPathsSettings>
                         .or_else(resource_changed::<HexTerrainTuning>),
                 ),
+                walking::systems::sync_player.run_if(
+                    resource_removed::<Board>
+                        .or_else(resource_exists_and_changed::<Board>)
+                        .or_else(resource_changed::<WalkingSettings>),
+                ),
                 systems::refresh_preview.run_if(
                     resource_exists_and_changed::<Board>
                         .or_else(resource_changed::<HexPathsView>)
                         .or_else(resource_changed::<HexPathsAppearance>),
                 ),
                 systems::paint_markers.run_if(resource_changed::<HexPathsView>),
+                walking::systems::advance_player,
                 systems::fit_viewport,
                 systems::aim_camera,
                 systems::orbit_camera,
                 face_camera::<HexPathsCamera>,
                 systems::draw_board,
+                walking::systems::draw_destination,
                 panel::sync_settings,
                 panel::update_stats,
                 panel::resize_panel,
@@ -152,6 +162,7 @@ pub(super) fn unload(
     mut commands: Commands,
     mut panel: ResMut<PanelState>,
     mut cache: ResMut<RegionCache>,
+    mut walking: ResMut<WalkingSettings>,
     ui_state: Option<Res<UiCameraState>>,
     mut cameras: Query<&mut Camera>,
 ) {
@@ -165,5 +176,6 @@ pub(super) fn unload(
     commands.remove_resource::<BoardStats>();
     commands.remove_resource::<Billboards>();
     cache.0 = None;
+    walking.enabled = false;
     *panel = PanelState::default();
 }

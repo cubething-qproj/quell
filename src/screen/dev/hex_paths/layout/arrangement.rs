@@ -549,6 +549,65 @@ impl Layout {
         weights
     }
 
+    /// Returns physical walking weights for laid trails and pad perimeters.
+    ///
+    /// Other edges are impassable. Unlike [`Self::network`], pads retain their
+    /// terrain costs: a player must actually walk between their entrances.
+    /// The symmetric weights choose a route; directional travel time is
+    /// calculated by [`Walk`](super::super::walking::data::Walk).
+    pub fn walking_costs(&self, context: Context) -> Vec<f32> {
+        let ground = context
+            .terrain
+            .step_costs(&self.heights, context.tuning.aversion);
+        let mut weights = self.step_costs(context);
+        for (e, weight) in weights.iter_mut().enumerate() {
+            if !self.trail.contains_key(&e) {
+                *weight = f32::INFINITY;
+            }
+        }
+        for tile in self.points() {
+            for edge in context.terrain.mesh.perimeter(tile) {
+                weights[edge] = ground[edge];
+            }
+        }
+        weights
+    }
+
+    /// Routes from corner `start` to `target` across trails and pads.
+    ///
+    /// Returns corners in walking order, excluding `start`. A request for the
+    /// current corner succeeds with an empty route. Invalid or unreachable
+    /// corners return `None`; Dijkstra's internal predecessor data stays private.
+    pub fn walking_route(
+        &self,
+        context: Context,
+        start: usize,
+        target: usize,
+    ) -> Option<Vec<usize>> {
+        let mesh = &context.terrain.mesh;
+        if start >= mesh.positions.len() || target >= mesh.positions.len() {
+            return None;
+        }
+        let weights = self.walking_costs(context);
+        let search = self.search(context, &weights, &[start]);
+        if !search.distance[target].is_finite() {
+            return None;
+        }
+        let mut corner = start;
+        Some(
+            search
+                .path(target)
+                .into_iter()
+                .rev()
+                .map(|edge| {
+                    let [a, b] = mesh.edges[edge];
+                    corner = if a == corner { b } else { a };
+                    corner
+                })
+                .collect(),
+        )
+    }
+
     /// Sets every pad's perimeter to the plaza weight.
     fn plazas(&self, context: Context, weights: &mut [f32]) {
         for tile in self.points() {

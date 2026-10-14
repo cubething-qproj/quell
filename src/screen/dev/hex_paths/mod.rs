@@ -10,7 +10,8 @@
 //! turns generated data into meshes, billboards, and overlays. [`screen`] owns
 //! loading, update ordering, and cleanup; [`panel`] edits settings and requests
 //! new layouts. Generation is synchronous; [`RegionCache`](data::RegionCache) reuses the last
-//! matching erosion result. The preview has no player walking or woodland sight
+//! matching erosion result. [`walking`] adds a separate player over the laid
+//! corner graph without changing generation. The preview has no woodland sight
 //! model, and its drawn trails still follow hex edges.
 //!
 //! The algorithm follows the round-11 design and hex-lab's `exp/15-density`,
@@ -28,6 +29,7 @@ mod systems;
 mod terrain;
 #[cfg(test)]
 mod test;
+mod walking;
 
 /// The screen type exported to the dev-screen registry.
 pub mod prelude {
@@ -45,7 +47,7 @@ pub fn plugin(app: &mut App) {
         app.add_plugins(MeshPickingPlugin);
     }
     app.add_plugins((FeathersPlugins, MinimalEditorCamPlugin))
-        .add_plugins(data::plugin)
+        .add_plugins((data::plugin, walking::plugin))
         .add_observer(systems::spawn_surface)
         .add_observer(systems::spawn_markers)
         .register_screen::<HexPathsScreen>();
