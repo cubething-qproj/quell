@@ -23,6 +23,7 @@ use bevy::{
     },
     input_focus::{InputFocus, tab_navigation::TabGroup},
     text::{EditableText, EditableTextFilter, TextEdit, TextEditChange},
+    ui::InteractionDisabled,
     ui_widgets::{Activate, ScrollArea, SliderPrecision, SliderStep, SliderValue, ValueChange},
 };
 
@@ -48,7 +49,7 @@ pub(super) fn scene(width: f32) -> impl Scene {
             }
             Children [
                 label("Hex paths"),
-                (@FeathersButton { @caption: bsn! { label("Regenerate") } }
+                (@FeathersButton { @caption: bsn! { label("Regenerate") } } LayoutControl
                     on(|_: On<Activate>, mut settings: ResMut<HexPathsSettings>| { settings.set_changed(); })),
                 (label_small("") StatsText),
                 label("View"),
@@ -66,7 +67,7 @@ pub(super) fn scene(width: f32) -> impl Scene {
                     on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.reveal_nodes = !v.reveal_nodes; })),
                 (@FeathersButton { @caption: bsn! { label("Toggle walking") } }
                     on(|_: On<Activate>, mut walking: ResMut<WalkingSettings>| { walking.enabled = !walking.enabled; })),
-                label_small("Walking: hover a path tile to preview its destination, then click. Layout edits end the walk."),
+                label_small("Walking: hover a path tile to preview its destination, then click. Layout controls are disabled while walking; other edits end the walk."),
                 (Node { align_items: AlignItems::Center, column_gap: px(8) } Children [
                     (label_small("Walking speed") Node { width: percent(50) }),
                     (@FeathersSlider { @min: 0., @max: 250., @value: 0. }
@@ -76,9 +77,9 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 ]),
                 label_small("Layout (same terrain; regenerate round the focus)"),
                 (Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
-                    (@FeathersButton { @caption: bsn! { label("New layout") } } on(relayout(None))),
-                    (@FeathersButton { @caption: bsn! { label("Regenerate here") } } on(relayout(Some(false)))),
-                    (@FeathersButton { @caption: bsn! { label("Fear here") } } on(relayout(Some(true)))),
+                    (@FeathersButton { @caption: bsn! { label("New layout") } } LayoutControl on(relayout(None))),
+                    (@FeathersButton { @caption: bsn! { label("Regenerate here") } } LayoutControl on(relayout(Some(false)))),
+                    (@FeathersButton { @caption: bsn! { label("Fear here") } } LayoutControl on(relayout(Some(true)))),
                 ]),
                 label_small("Camera focus (or click a marker)"),
                 (Node { column_gap: px(4) } Children [
@@ -234,6 +235,21 @@ fn set_seed(
             }
         }
         Err(_) => panel.seed_error = Some("Seed must fit an unsigned 64-bit integer."),
+    }
+}
+
+/// Disables [`LayoutControl`] buttons while walking and restores them afterwards.
+pub(super) fn lock_layout_controls(
+    mut commands: Commands,
+    walking: Res<WalkingSettings>,
+    controls: Query<(Entity, Has<InteractionDisabled>), With<LayoutControl>>,
+) {
+    for (entity, disabled) in &controls {
+        match (walking.enabled, disabled) {
+            (true, false) => commands.entity(entity).insert(InteractionDisabled),
+            (false, true) => commands.entity(entity).remove::<InteractionDisabled>(),
+            _ => continue,
+        };
     }
 }
 

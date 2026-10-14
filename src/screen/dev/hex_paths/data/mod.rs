@@ -398,6 +398,12 @@ pub struct StatsText;
 #[derive(Component, Default, Clone)]
 pub struct SeedInput;
 
+/// Marks the panel buttons that replace the board or its layout.
+/// [`lock_layout_controls`](super::panel::lock_layout_controls) disables them
+/// while walking; other settings edits still end the walk on board replacement.
+#[derive(Component, Default, Clone)]
+pub struct LayoutControl;
+
 /// Marks the panel slider bound to [`WalkingSettings::speed`](super::walking::data::WalkingSettings::speed).
 /// Unlike [`SettingSlider`], it applies while dragging: speed never regenerates the board.
 #[derive(Component, Default, Clone)]

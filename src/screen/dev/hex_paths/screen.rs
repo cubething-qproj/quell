@@ -60,6 +60,7 @@ impl Screen for HexPathsScreen {
                 systems::draw_board,
                 walking::systems::draw_destination,
                 panel::sync_settings,
+                panel::lock_layout_controls,
                 panel::update_stats,
                 panel::resize_panel,
             )
