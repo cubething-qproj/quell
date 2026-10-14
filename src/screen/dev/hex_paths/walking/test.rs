@@ -63,7 +63,7 @@ fn routes_use_only_trails_and_real_cost_pad_edges() {
     let mesh = &terrain.mesh;
     let start = mesh.tile_corners[layout.spawn][3];
     let target = *path.last().unwrap();
-    let route = layout.walking_route(context, start, target).unwrap();
+    let route = layout.walking_route(context, start, target, None).unwrap();
     assert_eq!(route.last(), Some(&target));
     let pad: BTreeSet<_> = mesh.perimeter(layout.spawn).into_iter().collect();
     let mut before = start;
@@ -87,13 +87,17 @@ fn routes_use_only_trails_and_real_cost_pad_edges() {
         })
         .map(|(c, _)| c)
         .unwrap();
-    assert!(layout.walking_route(context, start, off_network).is_none());
+    assert!(
+        layout
+            .walking_route(context, start, off_network, None)
+            .is_none()
+    );
     assert_eq!(
-        layout.walking_route(context, start, start),
+        layout.walking_route(context, start, start, None),
         Some(Vec::new())
     );
     layout.blocked[mesh.edge(path[0], path[1]).unwrap()] = true;
-    assert!(layout.walking_route(context, start, target).is_none());
+    assert!(layout.walking_route(context, start, target, None).is_none());
 }
 
 #[test]
@@ -110,7 +114,7 @@ fn picking_uses_the_hovered_tile_and_inverts_rendered_z() {
     let point = mesh.centers[layout.spawn].lerp(mesh.positions[expected], 0.9);
     assert!(point.y.abs() > 1., "the hit is away from the mirror axis");
     let target = walk
-        .destination(context, &layout, world(point, 0.))
+        .destination(context, &layout, world(point, 0.), None)
         .unwrap();
     assert_eq!(target.tile, layout.spawn);
     assert_eq!(target.corner, expected);
@@ -119,12 +123,12 @@ fn picking_uses_the_hovered_tile_and_inverts_rendered_z() {
         .find(|&t| mesh.playable[t] && mesh.perimeter(t).iter().all(|&e| !costs[e].is_finite()))
         .unwrap();
     assert!(
-        walk.destination(context, &layout, world(mesh.centers[empty], 0.))
+        walk.destination(context, &layout, world(mesh.centers[empty], 0.), None)
             .is_none(),
         "empty ground never snaps to a distant path"
     );
     assert!(
-        walk.destination(context, &layout, world(mesh.centers[0], 0.))
+        walk.destination(context, &layout, world(mesh.centers[0], 0.), None)
             .is_none(),
         "scenery cannot select a trail destination"
     );
@@ -139,7 +143,7 @@ fn elapsed_time_carries_across_edges_independently_of_frame_size() {
         tuning: &tuning,
     };
     let mut coarse = Walk::at_spawn(context, &layout);
-    assert!(coarse.plan(context, &layout, *path.last().unwrap()));
+    assert!(coarse.plan(context, &layout, *path.last().unwrap(), None));
     let mut fine = coarse.clone();
     coarse.advance(context, &layout, 55.);
     for _ in 0..550 {
@@ -168,13 +172,13 @@ fn redirect_finishes_the_current_edge_and_unreachable_requests_keep_the_route() 
         tuning: &tuning,
     };
     let mut walk = Walk::at_spawn(context, &layout);
-    assert!(walk.plan(context, &layout, *path.last().unwrap()));
+    assert!(walk.plan(context, &layout, *path.last().unwrap(), None));
     walk.advance(context, &layout, 1.);
     let before = walk.clone();
-    assert!(!walk.plan(context, &layout, usize::MAX));
+    assert!(!walk.plan(context, &layout, usize::MAX, None));
     assert_eq!(walk.route, before.route);
     assert_eq!(walk.progress, before.progress);
-    assert!(walk.plan(context, &layout, path[0]));
+    assert!(walk.plan(context, &layout, path[0], None));
     assert_eq!(
         walk.route.iter().copied().collect::<Vec<_>>(),
         [path[1], path[0]]
@@ -196,7 +200,7 @@ fn directional_pace_and_display_heights_use_the_unexaggerated_slope() {
     let (a, b) = (path[0], path[1]);
     layout.heights[b] = 0.2;
     let mut uphill = Walk::at_spawn(context, &layout);
-    assert!(uphill.plan(context, &layout, b));
+    assert!(uphill.plan(context, &layout, b, None));
     let mut downhill = uphill.clone();
     downhill.corner = b;
     downhill.route = [a].into();

@@ -7,7 +7,7 @@
 
 use super::{
     super::{data::*, layout::Context, terrain::world},
-    data::{Walk, WalkingSettings},
+    data::{Exploration, Walk, WalkingSettings},
 };
 use crate::prelude::*;
 use bevy::{
@@ -49,6 +49,8 @@ pub fn sync_player(
             tuning: &tuning,
         };
         let walk = Walk::at_spawn(context, &board.layout);
+        let mut exploration = Exploration::default();
+        exploration.observe(context, &board.layout, &walk, settings.sight_radius, &[]);
         let transform = Transform::from_translation(walk.position(
             context,
             &board.layout,
@@ -58,6 +60,7 @@ pub fn sync_player(
             Name::new("Walking player"),
             ScreenScoped,
             walk,
+            exploration,
             Billboard,
             Pickable::IGNORE,
             Mesh3d(billboards.quad.clone()),
@@ -81,7 +84,7 @@ pub fn pick_destination(
     settings: Res<HexPathsSettings>,
     tuning: Res<HexTerrainTuning>,
     cameras: Query<(), With<HexPathsCamera>>,
-    mut walker: Single<&mut Walk>,
+    walker: Single<(&mut Walk, &Exploration)>,
 ) {
     if press.button != PointerButton::Primary || !cameras.contains(press.hit.camera) {
         return;
@@ -94,8 +97,10 @@ pub fn pick_destination(
         settings: &settings,
         tuning: &tuning,
     };
-    if let Some(target) = walker.destination(context, &board.layout, hit) {
-        walker.plan(context, &board.layout, target.corner);
+    let (mut walk, exploration) = walker.into_inner();
+    let known = Some(&exploration.visible);
+    if let Some(target) = walk.destination(context, &board.layout, hit, known) {
+        walk.plan(context, &board.layout, target.corner, known);
     }
 }
 
@@ -113,7 +118,7 @@ pub fn draw_destination(
     hover: Res<HoverMap>,
     surfaces: Query<(), With<TerrainSurface>>,
     cameras: Query<(), With<HexPathsCamera>>,
-    walker: Single<&Walk>,
+    walker: Single<(&Walk, &Exploration)>,
     mut gizmos: Gizmos<HexPathsGizmos>,
 ) {
     let hit = hover.get(&PointerId::Mouse).and_then(|hits| {
@@ -126,7 +131,10 @@ pub fn draw_destination(
         settings: &settings,
         tuning: &tuning,
     };
-    let Some(target) = hit.and_then(|hit| walker.destination(context, &board.layout, hit)) else {
+    let (walk, exploration) = walker.into_inner();
+    let Some(target) = hit
+        .and_then(|hit| walk.destination(context, &board.layout, hit, Some(&exploration.visible)))
+    else {
         return;
     };
     let mesh = &board.terrain.mesh;
@@ -153,24 +161,29 @@ pub fn draw_destination(
 /// Reprojects even while paused so appearance edits move the billboard with
 /// the exaggerated surface. The camera retains its existing inspection focus.
 pub fn advance_player(
+    mut commands: Commands,
     time: Res<Time>,
     board: If<Res<Board>>,
     settings: Res<HexPathsSettings>,
     tuning: Res<HexTerrainTuning>,
     walking: Res<WalkingSettings>,
     appearance: Res<HexPathsAppearance>,
-    walker: Single<(&mut Walk, &mut Transform)>,
+    walker: Single<(&mut Walk, &mut Exploration, &mut Transform)>,
 ) {
-    let (mut walk, mut transform) = walker.into_inner();
+    let (mut walk, mut exploration, mut transform) = walker.into_inner();
     let context = Context {
         terrain: &board.terrain,
         settings: &settings,
         tuning: &tuning,
     };
-    walk.advance(
+    if exploration.advance(
         context,
         &board.layout,
+        &mut walk,
         time.delta_secs_f64() * walking.speed as f64,
-    );
+        walking.sight_radius,
+    ) {
+        commands.trigger(UpdateMarkers);
+    }
     transform.translation = walk.position(context, &board.layout, appearance.vertical_scale);
 }

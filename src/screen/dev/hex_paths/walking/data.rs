@@ -1,7 +1,8 @@
 //! Walking controls and the player's route through one layout.
 //!
 //! [`WalkingSettings`] enables a session; [`Walk`] lives on its billboard entity.
-//! Routing borrows [`Layout`], and movement borrows its levelled heights. Neither
+//! [`Exploration`] accompanies the walker and remembers trails and visited
+//! landmarks. Routing borrows [`Layout`], and movement borrows its levelled heights. Neither
 //! operation changes the generated board. Corner indices are valid only for
 //! that session; [`sync_player`](super::systems::sync_player) ends it when the
 //! board changes.
@@ -11,9 +12,11 @@ use super::super::{
     terrain::world,
 };
 use bevy::prelude::*;
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 
-/// Inspector controls for walking the full generated network.
+pub use super::exploration::Exploration;
+
+/// Inspector controls for walking and discovering the generated network.
 ///
 /// The panel toggles `enabled`. Entering starts at spawn; leaving discards
 /// the route. A new board or layout also disables walking. `speed` multiplies
@@ -24,6 +27,8 @@ pub struct WalkingSettings {
     pub enabled: bool,
     /// Simulation multiplier; zero pauses. Negative or non-finite values pause too.
     pub speed: f32,
+    /// Horizontal sight radius in edge lengths; only visible edges can be routed over.
+    pub sight_radius: f32,
     /// Outline and destination colour for a reachable tile under the pointer.
     pub hover_colour: Color,
     /// Radius of the destination marker, in edge lengths.
@@ -35,6 +40,7 @@ impl Default for WalkingSettings {
         Self {
             enabled: false,
             speed: 100.,
+            sight_radius: 3.,
             hover_colour: Color::srgb(1., 0.85, 0.15),
             target_radius: 0.15,
         }
@@ -80,7 +86,15 @@ impl Walk {
     /// pad perimeter accept clicks; empty ground never snaps to a distant path.
     /// Both hover preview and pressing use this rule. A request during an edge
     /// must be reachable from its far corner, where redirection takes effect.
-    pub fn destination(&self, context: Context, layout: &Layout, hit: Vec3) -> Option<Destination> {
+    /// `known` limits eligible edges and the connecting route; `None` exposes
+    /// the whole network for inspection.
+    pub fn destination(
+        &self,
+        context: Context,
+        layout: &Layout,
+        hit: Vec3,
+        known: Option<&BTreeSet<usize>>,
+    ) -> Option<Destination> {
         let mesh = &context.terrain.mesh;
         let point = Vec2::new(hit.x, -hit.z);
         let tile = mesh.tile_containing(point)?;
@@ -91,7 +105,7 @@ impl Walk {
         let mut eligible = mesh
             .perimeter(tile)
             .into_iter()
-            .filter(|&e| costs[e].is_finite())
+            .filter(|&e| costs[e].is_finite() && known.is_none_or(|known| known.contains(&e)))
             .flat_map(|e| mesh.edges[e])
             .collect::<Vec<_>>();
         eligible.sort_unstable();
@@ -107,7 +121,7 @@ impl Walk {
         } else {
             self.corner
         };
-        layout.walking_route(context, start, corner)?;
+        layout.walking_route(context, start, corner, known)?;
         Some(Destination { tile, corner })
     }
 
@@ -115,10 +129,18 @@ impl Walk {
     ///
     /// During an edge, replans from its far corner and keeps that edge's
     /// progress. An unreachable request leaves the existing walk intact.
-    pub fn plan(&mut self, context: Context, layout: &Layout, target: usize) -> bool {
+    /// `known` restricts the route to discovered edges; `None` exposes the
+    /// whole network for inspection.
+    pub fn plan(
+        &mut self,
+        context: Context,
+        layout: &Layout,
+        target: usize,
+        known: Option<&BTreeSet<usize>>,
+    ) -> bool {
         let underway = self.progress > 0.;
         let start = if underway { self.route[0] } else { self.corner };
-        let Some(route) = layout.walking_route(context, start, target) else {
+        let Some(route) = layout.walking_route(context, start, target, known) else {
             return false;
         };
         self.route = underway.then_some(start).into_iter().chain(route).collect();
@@ -129,10 +151,12 @@ impl Walk {
     ///
     /// Uses directional Tobler speed for each edge's rise/run and its actual
     /// unexaggerated 3D length. There is no smoothing-length correction. Zero,
-    /// negative, or non-finite elapsed time leaves the walk unchanged.
-    pub fn advance(&mut self, context: Context, layout: &Layout, mut seconds: f64) {
+    /// negative, or non-finite elapsed time leaves the walk unchanged. Returns
+    /// every corner reached, so discovery cannot skip arrivals on long frames.
+    pub fn advance(&mut self, context: Context, layout: &Layout, mut seconds: f64) -> Vec<usize> {
+        let mut arrived = Vec::new();
         if !seconds.is_finite() || seconds <= 0. {
-            return;
+            return arrived;
         }
         while let Some(&next) = self.route.front() {
             let duration = Self::edge_seconds(context, layout, self.corner, next);
@@ -143,9 +167,11 @@ impl Walk {
             }
             seconds -= remaining;
             self.corner = next;
+            arrived.push(next);
             self.route.pop_front();
             self.progress = 0.;
         }
+        arrived
     }
 
     /// Returns the billboard's world position on the displayed, levelled ground.

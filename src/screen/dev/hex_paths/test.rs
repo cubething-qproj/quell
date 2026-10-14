@@ -73,6 +73,7 @@ impl Fixture {
             .init_resource::<Assets<StandardMaterial>>()
             .add_observer(systems::spawn_surface)
             .add_observer(systems::spawn_markers)
+            .add_observer(systems::paint_markers)
             .add_systems(
                 Update,
                 (
@@ -86,7 +87,6 @@ impl Fixture {
                             .or_else(resource_changed::<HexPathsView>)
                             .or_else(resource_changed::<HexPathsAppearance>),
                     ),
-                    systems::paint_markers.run_if(resource_changed::<HexPathsView>),
                     walking::systems::advance_player,
                 )
                     .chain(),
@@ -196,7 +196,7 @@ impl Fixture {
         let view = world.resource::<HexPathsView>();
         let billboards = world.resource::<Billboards>();
         for (marker, material) in markers {
-            assert_eq!(material, marker.material(view, billboards));
+            assert_eq!(material, marker.material(view.reveal_nodes, billboards));
         }
     }
 
@@ -407,7 +407,7 @@ fn surface_presses_plan_walks_without_rebuilding_the_board() {
     let preview = world
         .get::<Walk>(player)
         .unwrap()
-        .destination(context, &board.layout, target.1)
+        .destination(context, &board.layout, target.1, None)
         .unwrap();
     assert_eq!(preview.tile, board.layout.spawn);
     assert_eq!(preview.corner, target_corner);

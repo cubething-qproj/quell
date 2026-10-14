@@ -576,19 +576,28 @@ impl Layout {
     /// Routes from corner `start` to `target` across trails and pads.
     ///
     /// Returns corners in walking order, excluding `start`. A request for the
-    /// current corner succeeds with an empty route. Invalid or unreachable
+    /// current corner succeeds with an empty route. When `known` is supplied,
+    /// only those edges can be used, including on pads. Invalid or unreachable
     /// corners return `None`; Dijkstra's internal predecessor data stays private.
     pub fn walking_route(
         &self,
         context: Context,
         start: usize,
         target: usize,
+        known: Option<&BTreeSet<usize>>,
     ) -> Option<Vec<usize>> {
         let mesh = &context.terrain.mesh;
         if start >= mesh.positions.len() || target >= mesh.positions.len() {
             return None;
         }
-        let weights = self.walking_costs(context);
+        let mut weights = self.walking_costs(context);
+        if let Some(known) = known {
+            for (e, weight) in weights.iter_mut().enumerate() {
+                if !known.contains(&e) {
+                    *weight = f32::INFINITY;
+                }
+            }
+        }
         let search = self.search(context, &weights, &[start]);
         if !search.distance[target].is_finite() {
             return None;

@@ -9,12 +9,15 @@
 //! [`spawn_surface`] draws levelled layout heights, while [`spawn_markers`] and
 //! [`paint_markers`] display landmark roles. Marker picking edits [`HexPathsView`];
 //! surface picking requests a route from [`Walk`].
-//! camera systems resolve [`CameraFocus`] into an exaggerated world target.
+//! Camera systems resolve [`CameraFocus`] into an exaggerated world target.
 //! [`draw_board`] overlays true topology as gizmos. [`screen`](super::screen) orders
 //! these systems so generation precedes rendering and focus precedes aiming.
 //! Visual height scaling never enters terrain costs, sight tests, or pace.
 
-use super::walking::{data::Walk, systems::pick_destination};
+use super::walking::{
+    data::{Exploration, Walk},
+    systems::pick_destination,
+};
 use super::{
     data::*,
     layout::{Context, Layout, NodeKind, regeneration_seed},
@@ -157,7 +160,7 @@ pub(super) fn relayout(
 /// Bridges resource changes to preview rebuild events after generation.
 ///
 /// A board or appearance change replaces both surface and markers. A view
-/// change only rebuilds surface colours; [`paint_markers`] handles reveal.
+/// change rebuilds surface colours and requests [`UpdateMarkers`] for reveal.
 /// [`If`] skips this bridge while no board exists. The screen's chained
 /// schedule flushes these commands before camera and overlay updates.
 pub(super) fn refresh_preview(
@@ -171,6 +174,9 @@ pub(super) fn refresh_preview(
     }
     if board.is_changed() || appearance.is_changed() {
         commands.trigger(RebuildMarkers);
+    }
+    if view.is_changed() {
+        commands.trigger(UpdateMarkers);
     }
 }
 
@@ -217,8 +223,9 @@ pub(super) fn spawn_surface(
 /// Positions each [`Pad`] at its levelled centre using [`Board::pad`]. The
 /// spawn/player distinction follows [`Board::regenerated`], rather than the
 /// layout count. While walking, spawn remains a landmark and the separate
-/// [`Walk`] entity displays the moving player. [`Marker::material`] sets each initial image; [`paint_markers`]
-/// updates reveal changes. Observes [`RebuildMarkers`]; crossing pads remain
+/// [`Walk`] entity displays the moving player. [`Marker::presentation`] sets
+/// each initial image and visibility; [`paint_markers`] applies later discovery
+/// and reveal changes. Observes [`RebuildMarkers`]; crossing pads remain
 /// outlines drawn by [`draw_board`].
 pub(super) fn spawn_markers(
     _: On<RebuildMarkers>,
@@ -230,6 +237,7 @@ pub(super) fn spawn_markers(
     root: Single<Entity, With<BoardRoot>>,
     markers: Query<Entity, With<Marker>>,
     walkers: Query<(), With<Walk>>,
+    exploration: Option<Single<&Exploration>>,
 ) {
     for marker in &markers {
         commands.entity(marker).despawn();
@@ -240,45 +248,64 @@ pub(super) fn spawn_markers(
     } else {
         Marker::Spawn
     };
-    let nodes = layout.nodes.iter().filter_map(|node| match node.kind {
-        NodeKind::Poi => Some((node.tile, Marker::Poi(node.card))),
-        NodeKind::Bench => Some((node.tile, Marker::Bench)),
-        NodeKind::Crossing => None,
-    });
-    for (tile, marker) in std::iter::once((layout.spawn, start)).chain(nodes) {
-        commands
-            .spawn((
-                Name::new("Marker"),
-                marker,
-                Pickable::default(),
-                Pad(tile),
-                Billboard,
-                Mesh3d(billboards.quad.clone()),
-                MeshMaterial3d(marker.material(&view, &billboards)),
-                Transform::from_translation(board.pad(tile, appearance.vertical_scale)),
-                RenderLayers::from(RenderLayer::HEX_PREVIEW),
-                ChildOf(*root),
-            ))
-            .observe(pick_focus);
+    let exploration = exploration.as_deref().map(|s| &**s);
+    let start = layout
+        .player_node
+        .filter(|_| exploration.is_some())
+        .and_then(Marker::for_node)
+        .unwrap_or(start);
+    let nodes = layout
+        .nodes
+        .iter()
+        .filter_map(|&node| Marker::for_node(node).map(|role| (node.tile, role, Some(node.id))));
+    for (tile, marker, id) in
+        std::iter::once((layout.spawn, start, layout.player_node.map(|n| n.id))).chain(nodes)
+    {
+        let (material, visibility) = marker.presentation(id, &view, &billboards, exploration);
+        let mut entity = commands.spawn((
+            Name::new("Marker"),
+            marker,
+            Pickable::default(),
+            Pad(tile),
+            Billboard,
+            Mesh3d(billboards.quad.clone()),
+            MeshMaterial3d(material),
+            visibility,
+            Transform::from_translation(board.pad(tile, appearance.vertical_scale)),
+            RenderLayers::from(RenderLayer::HEX_PREVIEW),
+            ChildOf(*root),
+        ));
+        entity.observe(pick_focus);
+        if let Some(id) = id {
+            entity.insert(NodeMarker(id));
+        }
     }
 }
 
-/// Selects [`Billboards`] materials from each [`Marker`] and the reveal toggle.
+/// Updates existing billboard images and visibility after view or discovery changes.
 ///
-/// Spawn and Player always show their own image; POIs and benches stay unknown
-/// unless [`HexPathsView::reveal_nodes`] is true. Runs only when the view
-/// changes; [`spawn_markers`] already assigns the correct initial material.
-/// This is a global preview reveal, not arrival-based discovery.
+/// [`Marker::presentation`] combines local sight, visited node IDs, and the
+/// Reveal override. [`spawn_markers`] assigns the same presentation at spawn.
+/// Observing [`UpdateMarkers`] avoids scanning markers on unchanged frames.
 pub(super) fn paint_markers(
+    _: On<UpdateMarkers>,
     view: Res<HexPathsView>,
     billboards: Res<Billboards>,
-    mut markers: Query<(&Marker, &mut MeshMaterial3d<StandardMaterial>)>,
+    exploration: Option<Single<&Exploration>>,
+    mut markers: Query<(
+        &Marker,
+        Option<&NodeMarker>,
+        &mut MeshMaterial3d<StandardMaterial>,
+        &mut Visibility,
+    )>,
 ) {
-    for (marker, mut material) in &mut markers {
-        let handle = marker.material(&view, &billboards);
+    let exploration = exploration.as_deref().map(|s| &**s);
+    for (marker, id, mut material, mut visibility) in &mut markers {
+        let (handle, shown) = marker.presentation(id.map(|n| n.0), &view, &billboards, exploration);
         if material.0 != handle {
             material.0 = handle;
         }
+        visibility.set_if_neq(shown);
     }
 }
 
@@ -417,6 +444,7 @@ pub(super) fn draw_board(
     board: If<Res<Board>>,
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
+    exploration: Option<Single<&Exploration>>,
     mut gizmos: Gizmos<HexPathsGizmos>,
 ) {
     let (mesh, layout) = (&board.terrain.mesh, &board.layout);
@@ -450,6 +478,12 @@ pub(super) fn draw_board(
         }
     }
     for node in layout.nodes.iter().filter(|n| n.kind == NodeKind::Crossing) {
+        if exploration
+            .as_ref()
+            .is_some_and(|s| !s.nearby.contains(&node.id))
+        {
+            continue;
+        }
         let corners = mesh.tile_corners[node.tile];
         gizmos.linestrip(
             corners
@@ -460,6 +494,12 @@ pub(super) fn draw_board(
         );
     }
     for (&e, &kind) in &layout.trail {
+        if exploration
+            .as_ref()
+            .is_some_and(|s| !s.visible.contains(&e))
+        {
+            continue;
+        }
         let [a, b] = mesh.edges[e];
         let colour = if layout.breaking.contains(&e) {
             appearance.breaking_trail

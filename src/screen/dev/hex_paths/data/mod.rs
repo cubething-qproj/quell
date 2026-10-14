@@ -9,12 +9,15 @@
 //! regenerating ground or trails. [`RebuildSurface`] and [`RebuildMarkers`]
 //! request presentation work after those resources change. [`systems`](super::systems) renders the board with
 //! [`TerrainSurface`], [`Marker`], and [`Billboard`] entities beneath [`BoardRoot`].
+//! [`Exploration`] tracks a walking session separately from the board;
+//! [`UpdateMarkers`] applies its card reveals and local billboard visibility.
 //! [`screen`](super::screen) creates shared assets on entry and removes play-time
 //! resources on unload, while persistent settings remain available.
 
 use super::{
-    layout::{Card, TrailKind},
+    layout::{Card, Node, NodeKind, TrailKind},
     terrain::erosion::{Region, RegionKey},
+    walking::data::Exploration,
 };
 use crate::prelude::*;
 
@@ -245,7 +248,7 @@ pub struct HexPathsView {
     pub view: TerrainView,
     pub focus: CameraFocus,
     /// Shows every node's type and card, and draws tease lines.
-    /// There is no per-node arrival or walking-based reveal state in this pass.
+    /// Overrides card images without changing the walker's discovery state.
     pub reveal_nodes: bool,
     /// Camera pitch below the horizon on entering the screen, in degrees.
     pub initial_tilt: f32,
@@ -291,10 +294,17 @@ pub struct TerrainSurface;
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pad(pub usize);
 
+/// Stable node identity attached to a landmark billboard alongside [`Pad`].
+///
+/// [`Exploration`] remembers visited nodes by this ID; tile and array indices
+/// belong to a particular arrangement. Spawn/player images may have no node.
+#[derive(Component)]
+pub struct NodeMarker(pub u32);
+
 /// The displayed role of a billboard spawned from a [`Board`]'s layout.
 ///
 /// [`Self::material`] selects a [`Billboards`] image from this value and
-/// [`HexPathsView::reveal_nodes`], both at spawn and on view changes. Crossing nodes use gizmo
+/// discovery state or [`HexPathsView::reveal_nodes`], both at spawn and on updates. Crossing nodes use gizmo
 /// outlines rather than billboard markers.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Marker {
@@ -309,19 +319,24 @@ pub enum Marker {
 }
 
 impl Marker {
+    /// Maps a landmark to its billboard role; crossings use outlines instead.
+    pub fn for_node(node: Node) -> Option<Self> {
+        match node.kind {
+            NodeKind::Poi => Some(Self::Poi(node.card)),
+            NodeKind::Bench => Some(Self::Bench),
+            NodeKind::Crossing => None,
+        }
+    }
+
     /// Selects this marker's image for the current reveal state.
     ///
     /// Spawn and player images are always shown; other roles remain unknown
     /// until revealed. Used both at spawn and by view-change updates.
-    pub fn material(
-        &self,
-        view: &HexPathsView,
-        billboards: &Billboards,
-    ) -> Handle<StandardMaterial> {
+    pub fn material(&self, revealed: bool, billboards: &Billboards) -> Handle<StandardMaterial> {
         match self {
             Self::Spawn => &billboards.spawn,
             Self::Player => &billboards.player,
-            _ if !view.reveal_nodes => &billboards.unknown,
+            _ if !revealed => &billboards.unknown,
             Self::Bench => &billboards.bench,
             Self::Poi(None) => &billboards.empty,
             Self::Poi(Some(Card::Key)) => &billboards.key,
@@ -329,6 +344,30 @@ impl Marker {
             Self::Poi(Some(Card::Fear)) => &billboards.fear,
         }
         .clone()
+    }
+
+    /// Selects the image and presence of a landmark for inspection or walking.
+    ///
+    /// In walking mode only nearby node billboards are present. Visiting a node
+    /// reveals its role/card, while the Reveal control can override its image.
+    /// Without an exploration session all markers are present for inspection.
+    pub fn presentation(
+        &self,
+        id: Option<u32>,
+        view: &HexPathsView,
+        billboards: &Billboards,
+        exploration: Option<&Exploration>,
+    ) -> (Handle<StandardMaterial>, Visibility) {
+        let visited = exploration.is_some_and(|s| id.is_some_and(|id| s.revealed.contains(&id)));
+        let hidden = exploration.is_some_and(|s| id.is_some_and(|id| !s.nearby.contains(&id)));
+        (
+            self.material(view.reveal_nodes || visited, billboards),
+            if hidden {
+                Visibility::Hidden
+            } else {
+                Visibility::Inherited
+            },
+        )
     }
 }
 
@@ -438,3 +477,10 @@ pub struct RebuildSurface;
 /// materials without replacing the marker entities.
 #[derive(Event)]
 pub struct RebuildMarkers;
+
+/// Refreshes billboard images and visibility after discovery or view changes.
+///
+/// [`paint_markers`](super::systems::paint_markers) updates existing entities;
+/// this event does not rebuild their meshes or replace the board.
+#[derive(Event)]
+pub struct UpdateMarkers;

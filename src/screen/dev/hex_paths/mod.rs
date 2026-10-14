@@ -50,5 +50,6 @@ pub fn plugin(app: &mut App) {
         .add_plugins((data::plugin, walking::plugin))
         .add_observer(systems::spawn_surface)
         .add_observer(systems::spawn_markers)
+        .add_observer(systems::paint_markers)
         .register_screen::<HexPathsScreen>();
 }

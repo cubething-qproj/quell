@@ -8,12 +8,15 @@
 //! picking, and projects the interpolated player position onto the exaggerated
 //! preview. Board replacement ends the walk.
 //!
-//! This slice exposes the whole network. Local discovery, arrival-based card
-//! reveal, and a camera that follows movement belong to subsequent slices.
+//! [`Exploration`](data::Exploration) restricts routing and trail drawing to
+//! edges within sight, hides distant landmarks, and remembers cards on
+//! arrival. The Reveal control overrides card images without granting route
+//! knowledge. A camera that follows movement belongs to a subsequent slice.
 
 use bevy::prelude::*;
 
 pub(super) mod data;
+mod exploration;
 pub(super) mod systems;
 #[cfg(test)]
 mod test;

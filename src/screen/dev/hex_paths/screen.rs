@@ -52,7 +52,6 @@ impl Screen for HexPathsScreen {
                         .or_else(resource_changed::<HexPathsView>)
                         .or_else(resource_changed::<HexPathsAppearance>),
                 ),
-                systems::paint_markers.run_if(resource_changed::<HexPathsView>),
                 walking::systems::advance_player,
                 systems::fit_viewport,
                 systems::aim_camera,
