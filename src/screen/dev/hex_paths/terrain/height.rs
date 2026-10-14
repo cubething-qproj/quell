@@ -1,74 +1,42 @@
-use super::{super::data::*, HexMesh};
+//! Raster sampling and the noise utilities used before layout generation.
+//!
+//! [`Region::simulate`](super::erosion::Region::simulate) uses [`standard_normal`] and [`blur`]
+//! to create its initial broad rolls and roughness. [`Window`](super::window::Window)
+//! stores the chosen crop as a [`Raster`], sampled by [`Terrain`](super::Terrain) for
+//! corner heights and by [`views`](super::sites::views) for bench sight lines.
+//! The raster uses board edge lengths; the region itself uses metres.
+
 use crate::prelude::*;
 use rand::{Rng, RngExt};
-use super::SQRT_3;
 use std::f32::consts::TAU;
 
-/// Fine height raster the corners are sampled from; also used for line of
-/// sight. Stored column-major: `data[x * height + y]`.
+/// The fine height crop used to construct [`Terrain`](super::Terrain).
+///
+/// [`Window::choose`](super::window::Window::choose) samples an eroded region into this board
+/// raster. [`Self::sample`] supplies hex-corner heights and ground along bench
+/// sight lines. Layout tease visibility instead samples the levelled hex mesh.
+/// Coordinates and heights use hex edge lengths; entries are column-major,
+/// with cell `(x, y)` stored at `data[x * height + y]`.
 #[derive(Debug, Clone)]
 pub struct Raster {
+    /// Board-plane position of raster cell `(0, 0)`, in edge lengths.
     pub origin: Vec2,
     /// Cells per hex edge length.
     pub res: f32,
+    /// Cells along the board-plane X axis.
     pub width: usize,
+    /// Cells along the board-plane Y axis.
     pub height: usize,
+    /// Column-major heights in edge lengths, with `width × height` entries.
     pub data: Vec<f32>,
 }
 
 impl Raster {
-    /// Fractal noise (octaves of blurred white noise), blended with a ridged
-    /// copy, then reshaped so lowlands flatten and scaled to `relief`.
-    pub fn heightmap(
-        mesh: &HexMesh,
-        settings: &HexPathsSettings,
-        tuning: &HexTerrainTuning,
-        rng: &mut impl Rng,
-    ) -> Self {
-        let res = tuning.resolution;
-        let (min, max) = mesh
-            .positions
-            .iter()
-            .fold((Vec2::MAX, Vec2::MIN), |(lo, hi), &p| (lo.min(p), hi.max(p)));
-        let origin = min - 2.;
-        let size = ((max + 2. - origin) * res).ceil();
-        let (width, height) = (size.x as usize, size.y as usize);
-        let mut total = vec![0.; width * height];
-        let mut amplitude = 1.;
-        for octave in 0..tuning.octaves {
-            let size = settings.scale / 2f32.powi(octave as i32) * SQRT_3;
-            let white = (0..width * height).map(|_| standard_normal(rng)).collect();
-            let noise = blur(white, width, height, size * res / 2.);
-            let deviation = std_dev(&noise);
-            total
-                .iter_mut()
-                .zip(&noise)
-                .for_each(|(t, n)| *t += amplitude * n / deviation);
-            amplitude *= settings.roughness;
-        }
-        let deviation = std_dev(&total);
-        total.iter_mut().for_each(|t| *t /= deviation);
-        let ridged = norm01(total.iter().map(|t| 1. - t.abs()).collect());
-        let blended = norm01(
-            norm01(total)
-                .iter()
-                .zip(&ridged)
-                .map(|(t, r)| (1. - settings.ridges) * t + settings.ridges * r)
-                .collect(),
-        );
-        Self {
-            origin,
-            res,
-            width,
-            height,
-            data: blended
-                .into_iter()
-                .map(|h| h.powf(tuning.valleys) * settings.relief)
-                .collect(),
-        }
-    }
-
-    /// Bilinear height at `point`, clamped to the raster's edge.
+    /// Samples a board-plane point bilinearly, returning height in edge lengths.
+    ///
+    /// Converts `point` using [`Self::origin`] and [`Self::res`], then clamps to the
+    /// raster boundary. This is the common sampler for terrain corners and the
+    /// ground sight lines in [`views`](super::sites::views).
     pub fn sample(&self, point: Vec2) -> f32 {
         let at = ((point - self.origin) * self.res)
             .clamp(Vec2::ZERO, Vec2::new(self.width as f32 - 1., self.height as f32 - 1.));
@@ -82,8 +50,12 @@ impl Raster {
     }
 }
 
-/// Separable Gaussian blur that wraps at the edges, truncated at 4 sigma.
-fn blur(data: Vec<f32>, width: usize, height: usize, sigma: f32) -> Vec<f32> {
+/// Blurs a column-major raster with a separable Gaussian kernel.
+///
+/// `sigma` is in cells and must be positive. Each axis wraps at its boundaries,
+/// and the kernel is truncated at four sigma. Used by
+/// [`Region::simulate`](super::erosion::Region::simulate) to turn white noise into broad rolls.
+pub fn blur(data: Vec<f32>, width: usize, height: usize, sigma: f32) -> Vec<f32> {
     let radius = (4. * sigma + 0.5) as isize;
     let kernel: Vec<f32> = (-radius..=radius)
         .map(|i| (-(i * i) as f32 / (2. * sigma * sigma)).exp())
@@ -111,22 +83,12 @@ fn blur(data: Vec<f32>, width: usize, height: usize, sigma: f32) -> Vec<f32> {
     pass(&columns, height, width, height, 1)
 }
 
-/// Population standard deviation.
-fn std_dev(data: &[f32]) -> f32 {
-    let mean = data.iter().sum::<f32>() / data.len() as f32;
-    (data.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / data.len() as f32).sqrt()
-}
-
-/// Rescales to span exactly 0..=1.
-fn norm01(data: Vec<f32>) -> Vec<f32> {
-    let (min, max) = data
-        .iter()
-        .fold((f32::MAX, f32::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
-    data.into_iter().map(|x| (x - min) / (max - min)).collect()
-}
-
-/// A standard normal sample, by Box–Muller.
-fn standard_normal(rng: &mut impl Rng) -> f32 {
+/// A standard normal sample, by [`Box–Muller.`](https://en.wikipedia.org/wiki/Box%E2%80%93Muller_transform)
+///
+/// Transforms two uniform draws into one zero-mean, unit-variance value.
+/// [`Region::simulate`](super::erosion::Region::simulate) scales these samples for rolls and
+/// roughness.
+pub fn standard_normal(rng: &mut impl Rng) -> f32 {
     let u: f32 = 1. - rng.random::<f32>();
     let v: f32 = rng.random();
     (-2. * u.ln()).sqrt() * (TAU * v).cos()

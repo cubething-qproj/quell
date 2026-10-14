@@ -1,9 +1,26 @@
+//! Lifecycle and update ordering for [`HexPathsScreen`].
+//!
+//! Loading creates the camera, billboard assets, and panel and saves the UI
+//! camera's clear colour. Readiness marks settings changed; Update is the sole
+//! full-generation path. Chained systems generate [`Board`] before replacing
+//! its surface and markers, then handle view, focus, camera, and overlays.
+//!
+//! Unload restores the UI camera and removes play-time resources, including
+//! the board and billboard handles; it clears the cached region and panel
+//! errors. Screen-scoped entity cleanup removes the preview hierarchy.
+//! Settings, tuning, appearance, and view resources remain registered.
+
 use super::{data::*, panel, systems};
 use crate::prelude::*;
 use bevy::feathers::{dark_theme::create_dark_theme, theme::UiTheme};
 use bevy_editor_cam::prelude::{EditorCam, EnabledMotion};
 
-/// Dev screen for inspecting hex path generation.
+/// The dev [`Screen`] combining generation, inspection controls, and a 3D preview.
+///
+/// The dev plugin registers it to own loading, cleanup, and the update order
+/// of the `systems` and `panel` modules. The internal `Board` resource stores
+/// generated terrain and layout; the camera and UI are scoped entities,
+/// separate from the pure generator.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub struct HexPathsScreen;
 
@@ -22,7 +39,10 @@ impl Screen for HexPathsScreen {
                         .or_else(resource_changed::<HexPathsView>)
                         .or_else(resource_changed::<HexPathsAppearance>),
                 ),
-                systems::spawn_markers.run_if(resource_exists_and_changed::<Board>),
+                systems::spawn_markers.run_if(
+                    resource_exists_and_changed::<Board>
+                        .or_else(resource_exists::<Board>.and_then(resource_changed::<HexPathsAppearance>)),
+                ),
                 systems::paint_markers,
                 systems::fit_viewport,
                 systems::pick_focus,
@@ -45,8 +65,12 @@ impl Screen for HexPathsScreen {
     }
 }
 
-/// Sets the dev theme, loads billboards, and creates the board camera and
-/// panel once when entering the screen.
+/// Creates preview assets and UI, then finishes the screen's loading phase.
+///
+/// Saves the default UI camera's clear colour in [`UiCameraState`] and disables
+/// its clear so the board camera remains visible beneath it. Billboard asset
+/// handles are requested here; this does not wait for image loading. Full
+/// board generation is requested later by [`request_board`].
 fn init(
     mut commands: Commands,
     server: Res<AssetServer>,
@@ -101,7 +125,12 @@ fn init(
             Mesh::from(Rectangle::new(height / 2., height)).translated_by(Vec3::Y * height / 2.),
         ),
         spawn: billboard("spawn"),
+        player: billboard("player"),
         bench: billboard("bench"),
+        empty: billboard("empty"),
+        key: billboard("key"),
+        npc: billboard("npc"),
+        fear: billboard("fear"),
         unknown: billboard("unknown"),
     });
     commands.queue_spawn_scene(panel::scene(appearance.panel_width));
@@ -113,10 +142,15 @@ fn request_board(mut settings: ResMut<HexPathsSettings>) {
     settings.set_changed();
 }
 
-/// Removes play-time resources when the screen's entities are cleaned up.
+/// Restores UI compositing state and removes resources belonging to this screen entry.
+///
+/// Removes [`Board`], [`BoardStats`], [`Billboards`], and [`UiCameraState`], then
+/// clears [`RegionCache`] and [`PanelState`]. Screen cleanup despawns scoped
+/// entities separately; persistent settings and view resources are retained.
 pub(super) fn unload(
     mut commands: Commands,
     mut panel: ResMut<PanelState>,
+    mut cache: ResMut<RegionCache>,
     ui_state: Option<Res<UiCameraState>>,
     mut cameras: Query<&mut Camera>,
 ) {
@@ -129,5 +163,6 @@ pub(super) fn unload(
     commands.remove_resource::<Board>();
     commands.remove_resource::<BoardStats>();
     commands.remove_resource::<Billboards>();
-    panel.seed_error = None;
+    cache.0 = None;
+    *panel = PanelState::default();
 }

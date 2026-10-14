@@ -7,10 +7,10 @@
 //! For general information on how to use this template, see
 //! the [docs] module.
 
-/// Information about the general architecture and patterns used in this
-/// template.
-#[cfg(doc)]
-pub mod docs;
+// /// Information about the general architecture and patterns used in this
+// /// template.
+// #[cfg(doc)]
+// pub mod docs;
 
 /// See [framework::screen]
 pub mod screen;
