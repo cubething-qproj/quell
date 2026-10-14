@@ -5,6 +5,7 @@
 //! [`relayout`] keeps that terrain and attempts a new arrangement; failure
 //! retains the old layout. Both repair tile-based camera focus after success.
 //!
+//! [`refresh_preview`] translates resource changes into rebuild events.
 //! [`spawn_surface`] draws levelled layout heights, while [`spawn_markers`] and
 //! [`paint_markers`] display landmark roles. Picking edits [`HexPathsView`];
 //! camera systems resolve [`CameraFocus`] into an exaggerated world target.
@@ -14,7 +15,7 @@
 
 use super::{
     data::*,
-    layout::{Card, Context, Layout, NodeKind, regeneration_seed},
+    layout::{Context, Layout, NodeKind, regeneration_seed},
     terrain::{
         Terrain,
         erosion::{Region, RegionKey},
@@ -25,6 +26,8 @@ use crate::prelude::*;
 use bevy::{
     camera::Viewport,
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
+    picking::events::Press,
+    prelude::*,
     window::PrimaryWindow,
 };
 use bevy_editor_cam::prelude::EditorCam;
@@ -149,40 +152,59 @@ pub(super) fn relayout(
     }
 }
 
+/// Bridges resource changes to preview rebuild events after generation.
+///
+/// A board or appearance change replaces both surface and markers. A view
+/// change only rebuilds surface colours; [`paint_markers`] handles reveal.
+/// [`If`] skips this bridge while no board exists. The screen's chained
+/// schedule flushes these commands before camera and overlay updates.
+pub(super) fn refresh_preview(
+    mut commands: Commands,
+    board: If<Res<Board>>,
+    view: Res<HexPathsView>,
+    appearance: Res<HexPathsAppearance>,
+) {
+    if board.is_changed() || view.is_changed() || appearance.is_changed() {
+        commands.trigger(RebuildSurface);
+    }
+    if board.is_changed() || appearance.is_changed() {
+        commands.trigger(RebuildMarkers);
+    }
+}
+
 /// Rebuilds the [`TerrainSurface`] child beneath the current [`BoardRoot`].
 ///
 /// [`Board::surface_mesh`] uses [`Layout::heights`] for levelled ground, applies
 /// appearance exaggeration, and colours it with height, hillshade, and the
-/// selected [`TerrainView`]. Scheduled when board, view, or appearance changes;
-/// does nothing if the board or its single root is absent.
+/// selected [`TerrainView`]. Observes [`RebuildSurface`]; parameter validation
+/// skips the observer if the board or its single root is absent.
 pub(super) fn spawn_surface(
+    _: On<RebuildSurface>,
     mut commands: Commands,
-    board: Option<Res<Board>>,
+    board: If<Res<Board>>,
     settings: Res<HexPathsSettings>,
     tuning: Res<HexTerrainTuning>,
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
-    roots: Query<Entity, With<BoardRoot>>,
+    root: Single<Entity, With<BoardRoot>>,
     surfaces: Query<Entity, With<TerrainSurface>>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
-    let (Some(board), Ok(root)) = (board, roots.single()) else {
-        return;
-    };
     for surface in &surfaces {
         commands.entity(surface).despawn();
     }
     commands.spawn((
         TerrainSurface,
+        Pickable::IGNORE,
         Name::new("Terrain"),
         Mesh3d(meshes.add(board.surface_mesh(&settings, &tuning, view.view, &appearance))),
         MeshMaterial3d(materials.add(StandardMaterial {
             unlit: true,
             ..default()
         })),
-        RenderLayers::layer(31),
-        ChildOf(root),
+        RenderLayers::from(RenderLayer::HEX_PREVIEW),
+        ChildOf(*root),
     ));
 }
 
@@ -190,19 +212,19 @@ pub(super) fn spawn_surface(
 ///
 /// Positions each [`Pad`] at its levelled centre using [`Board::pad`]. The
 /// spawn/player distinction follows [`Board::regenerated`], rather than the
-/// layout count. Materials start unknown and [`paint_markers`] selects their
-/// displayed roles. Crossing pads are outlines drawn by [`draw_board`].
+/// layout count. [`Marker::material`] sets each initial image; [`paint_markers`]
+/// updates reveal changes. Observes [`RebuildMarkers`]; crossing pads remain
+/// outlines drawn by [`draw_board`].
 pub(super) fn spawn_markers(
+    _: On<RebuildMarkers>,
     mut commands: Commands,
-    board: Res<Board>,
+    board: If<Res<Board>>,
+    view: Res<HexPathsView>,
     billboards: Res<Billboards>,
     appearance: Res<HexPathsAppearance>,
-    roots: Query<Entity, With<BoardRoot>>,
+    root: Single<Entity, With<BoardRoot>>,
     markers: Query<Entity, With<Marker>>,
 ) {
-    let Ok(root) = roots.single() else {
-        return;
-    };
     for marker in &markers {
         commands.entity(marker).despawn();
     }
@@ -218,97 +240,66 @@ pub(super) fn spawn_markers(
         NodeKind::Crossing => None,
     });
     for (tile, marker) in std::iter::once((layout.spawn, start)).chain(nodes) {
-        commands.spawn((
-            Name::new("Marker"),
-            marker,
-            Pad(tile),
-            Billboard,
-            Mesh3d(billboards.quad.clone()),
-            MeshMaterial3d(billboards.unknown.clone()),
-            Transform::from_translation(board.pad(tile, appearance.vertical_scale)),
-            RenderLayers::layer(31),
-            ChildOf(root),
-        ));
+        commands
+            .spawn((
+                Name::new("Marker"),
+                marker,
+                Pickable::default(),
+                Pad(tile),
+                Billboard,
+                Mesh3d(billboards.quad.clone()),
+                MeshMaterial3d(marker.material(&view, &billboards)),
+                Transform::from_translation(board.pad(tile, appearance.vertical_scale)),
+                RenderLayers::from(RenderLayer::HEX_PREVIEW),
+                ChildOf(*root),
+            ))
+            .observe(pick_focus);
     }
 }
 
 /// Selects [`Billboards`] materials from each [`Marker`] and the reveal toggle.
 ///
 /// Spawn and Player always show their own image; POIs and benches stay unknown
-/// unless [`HexPathsView::reveal_nodes`] is true. Updates newly added markers
-/// or markers after a view change. This is a global preview reveal, not
-/// arrival-based discovery.
+/// unless [`HexPathsView::reveal_nodes`] is true. Runs only when the view
+/// changes; [`spawn_markers`] already assigns the correct initial material.
+/// This is a global preview reveal, not arrival-based discovery.
 pub(super) fn paint_markers(
     view: Res<HexPathsView>,
     billboards: Res<Billboards>,
-    mut markers: Query<(Ref<Marker>, &mut MeshMaterial3d<StandardMaterial>)>,
+    mut markers: Query<(&Marker, &mut MeshMaterial3d<StandardMaterial>)>,
 ) {
     for (marker, mut material) in &mut markers {
-        if !view.is_changed() && !marker.is_added() {
-            continue;
-        }
-        let handle = match *marker {
-            Marker::Spawn => &billboards.spawn,
-            Marker::Player => &billboards.player,
-            _ if !view.reveal_nodes => &billboards.unknown,
-            Marker::Bench => &billboards.bench,
-            Marker::Poi(None) => &billboards.empty,
-            Marker::Poi(Some(Card::Key)) => &billboards.key,
-            Marker::Poi(Some(Card::Npc)) => &billboards.npc,
-            Marker::Poi(Some(Card::Fear)) => &billboards.fear,
-        };
-        if material.0 != *handle {
-            material.0 = handle.clone();
+        let handle = marker.material(&view, &billboards);
+        if material.0 != handle {
+            material.0 = handle;
         }
     }
 }
 
-/// Chooses the nearest marker hit by a left-click ray within the board viewport.
+/// Focuses a billboard on a primary pointer press from the board camera.
 ///
-/// Approximates picking by distance to each billboard's middle, using half
-/// its configured height as the radius. Spawn/player markers select Player
-/// focus; POIs and benches select their tile in [`CameraFocus::Node`]. This
-/// sets camera focus only, not a walking destination.
+/// Attached to each marker by [`spawn_markers`]. Bevy mesh picking handles
+/// hit ordering, viewport clipping, and UI occlusion. Spawn/player select
+/// Player focus; POIs and benches select their tile in [`CameraFocus::Node`].
+/// This sets camera focus only, not a walking destination.
 pub(super) fn pick_focus(
-    mouse: Res<ButtonInput<MouseButton>>,
-    window: Single<&Window, With<PrimaryWindow>>,
-    appearance: Res<HexPathsAppearance>,
-    camera: Single<(&Camera, &GlobalTransform), With<HexPathsCamera>>,
-    markers: Query<(&Marker, &Pad, &GlobalTransform)>,
+    press: On<Pointer<Press>>,
+    cameras: Query<(), With<HexPathsCamera>>,
+    markers: Query<(&Marker, &Pad)>,
     mut view: ResMut<HexPathsView>,
 ) {
-    let (camera, camera_transform) = *camera;
-    let Some(ray) = window
-        .cursor_position()
-        .filter(|_| mouse.just_pressed(MouseButton::Left))
-        .filter(|&cursor| {
-            camera
-                .logical_viewport_rect()
-                .is_some_and(|rect| rect.contains(cursor))
-        })
-        .and_then(|cursor| camera.viewport_to_world(camera_transform, cursor).ok())
-    else {
+    if press.button != PointerButton::Primary || !cameras.contains(press.hit.camera) {
+        return;
+    }
+    let Ok((marker, pad)) = markers.get(press.entity) else {
         return;
     };
-    // Nearest billboard whose middle passes within half its height of the ray.
-    let reach = appearance.billboard_height / 2.;
-    let hit = markers
-        .iter()
-        .filter_map(|(marker, pad, transform)| {
-            let middle = transform.translation() + Vec3::Y * reach;
-            let along = (middle - ray.origin).dot(*ray.direction);
-            let miss = middle.distance(ray.get_point(along));
-            (along > 0. && miss < reach).then_some((along, marker, pad))
-        })
-        .min_by(|a, b| a.0.total_cmp(&b.0));
-    if let Some((_, marker, pad)) = hit {
-        let focus = match marker {
-            Marker::Spawn | Marker::Player => CameraFocus::Player,
-            Marker::Poi(_) | Marker::Bench => CameraFocus::Node(pad.0),
-        };
-        if view.focus != focus {
-            view.focus = focus;
-        }
+    let focus = match marker {
+        Marker::Spawn | Marker::Player => CameraFocus::Player,
+        Marker::Poi(_) | Marker::Bench => CameraFocus::Node(pad.0),
+    };
+    if view.focus != focus {
+        view.focus = focus;
     }
 }
 
@@ -341,15 +332,12 @@ pub(super) fn fit_viewport(
 /// node/player starting distance. The local cache includes exaggeration
 /// because the same focus moves vertically when the displayed scale changes.
 pub(super) fn aim_camera(
-    board: Option<Res<Board>>,
+    board: If<Res<Board>>,
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
     mut aimed: Local<Option<(CameraFocus, f32)>>,
     mut camera: Single<&mut Transform, With<HexPathsCamera>>,
 ) {
-    let Some(board) = board else {
-        return;
-    };
     // The vertical scale moves the focus, so it re-aims too.
     let aim = (view.focus, appearance.vertical_scale);
     if !board.is_changed() && *aimed == Some(aim) {
@@ -376,7 +364,7 @@ pub(super) fn orbit_camera(
     scroll: Res<AccumulatedMouseScroll>,
     appearance: Res<HexPathsAppearance>,
     window: Single<&Window, With<PrimaryWindow>>,
-    board: Option<Res<Board>>,
+    board: If<Res<Board>>,
     view: Res<HexPathsView>,
     camera: Single<(&Camera, &Transform, &mut EditorCam), With<HexPathsCamera>>,
 ) {
@@ -384,9 +372,6 @@ pub(super) fn orbit_camera(
     if mouse.just_released(MouseButton::Right) {
         controller.end_move();
     }
-    let Some(board) = board else {
-        return;
-    };
     let over_board = window.cursor_position().is_some_and(|cursor| {
         camera
             .logical_viewport_rect()
@@ -423,14 +408,11 @@ pub(super) fn orbit_camera(
 /// Outlines the playable tiles on the terrain, and draws the creeks,
 /// crossings and trails over it; with nodes revealed, teases too.
 pub(super) fn draw_board(
-    board: Option<Res<Board>>,
+    board: If<Res<Board>>,
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
     mut gizmos: Gizmos<HexPathsGizmos>,
 ) {
-    let Some(board) = board else {
-        return;
-    };
     let (mesh, layout) = (&board.terrain.mesh, &board.layout);
     let scale = appearance.vertical_scale;
     let corner = |c: usize, lift: f32| world(mesh.positions[c], layout.heights[c] * scale + lift);

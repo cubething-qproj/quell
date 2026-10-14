@@ -17,7 +17,7 @@
 //! `trunk-sight` arm; the relationships and pipelines are documented here.
 
 use crate::prelude::*;
-use bevy::feathers::FeathersPlugins;
+use bevy::{feathers::FeathersPlugins, prelude::*};
 use bevy_editor_cam::prelude::MinimalEditorCamPlugin;
 
 mod data;
@@ -36,11 +36,17 @@ pub mod prelude {
 
 /// Registers [`HexPathsScreen`], its settings and preview resources.
 ///
-/// Also installs the billboard preview's UI and orbit-camera plugins and the
+/// Also installs UI, orbit-camera, and mesh-picking plugins, registers the
+/// surface and marker rebuild observers, and configures the
 /// separate [`HexPathsGizmos`](data::HexPathsGizmos) render layer. Generation is scheduled by
 /// the screen, rather than running during plugin registration.
 pub fn plugin(app: &mut App) {
+    if !app.is_plugin_added::<MeshPickingPlugin>() {
+        app.add_plugins(MeshPickingPlugin);
+    }
     app.add_plugins((FeathersPlugins, MinimalEditorCamPlugin))
         .add_plugins(data::plugin)
+        .add_observer(systems::spawn_surface)
+        .add_observer(systems::spawn_markers)
         .register_screen::<HexPathsScreen>();
 }

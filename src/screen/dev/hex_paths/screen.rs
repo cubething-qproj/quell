@@ -2,8 +2,9 @@
 //!
 //! Loading creates the camera, billboard assets, and panel and saves the UI
 //! camera's clear colour. Readiness marks settings changed; Update is the sole
-//! full-generation path. Chained systems generate [`Board`] before replacing
-//! its surface and markers, then handle view, focus, camera, and overlays.
+//! full-generation path. Chained systems generate [`Board`] before triggering
+//! surface and marker observers, then update camera and overlays. Pointer
+//! observers attached to markers select focus before the screen update.
 //!
 //! Unload restores the UI camera and removes play-time resources, including
 //! the board and billboard handles; it clears the cached region and panel
@@ -12,7 +13,10 @@
 
 use super::{data::*, panel, systems};
 use crate::prelude::*;
-use bevy::feathers::{dark_theme::create_dark_theme, theme::UiTheme};
+use bevy::{
+    feathers::{dark_theme::create_dark_theme, theme::UiTheme},
+    prelude::*,
+};
 use bevy_editor_cam::prelude::{EditorCam, EnabledMotion};
 
 /// The dev [`Screen`] combining generation, inspection controls, and a 3D preview.
@@ -35,17 +39,13 @@ impl Screen for HexPathsScreen {
                     resource_changed::<HexPathsSettings>
                         .or_else(resource_changed::<HexTerrainTuning>),
                 ),
-                systems::spawn_surface.run_if(
+                systems::refresh_preview.run_if(
                     resource_exists_and_changed::<Board>
                         .or_else(resource_changed::<HexPathsView>)
                         .or_else(resource_changed::<HexPathsAppearance>),
                 ),
-                systems::spawn_markers.run_if(resource_exists_and_changed::<Board>.or_else(
-                    resource_exists::<Board>.and_then(resource_changed::<HexPathsAppearance>),
-                )),
-                systems::paint_markers,
+                systems::paint_markers.run_if(resource_changed::<HexPathsView>),
                 systems::fit_viewport,
-                systems::pick_focus,
                 systems::aim_camera,
                 systems::orbit_camera,
                 face_camera::<HexPathsCamera>,
@@ -91,6 +91,7 @@ fn init(
         Name::new("Hex Board Camera"),
         ScreenScoped,
         HexPathsCamera,
+        MeshPickingCamera,
         Camera3d::default(),
         // Panning will follow the player or terrain instead.
         EditorCam {
@@ -106,7 +107,7 @@ fn init(
             order: CameraOrder::World as isize,
             ..default()
         },
-        RenderLayers::layer(31),
+        RenderLayers::from(RenderLayer::HEX_PREVIEW),
     ));
     let height = appearance.billboard_height;
     let mut billboard = |name: &str| {

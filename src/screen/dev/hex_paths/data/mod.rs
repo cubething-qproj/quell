@@ -6,7 +6,8 @@
 //! derived measurements. [`BoardStats`] and [`PanelState`] report failures.
 //!
 //! [`HexPathsView`] and [`HexPathsAppearance`] control presentation without
-//! regenerating ground or trails. [`systems`](super::systems) renders the board with
+//! regenerating ground or trails. [`RebuildSurface`] and [`RebuildMarkers`]
+//! request presentation work after those resources change. [`systems`](super::systems) renders the board with
 //! [`TerrainSurface`], [`Marker`], and [`Billboard`] entities beneath [`BoardRoot`].
 //! [`screen`](super::screen) creates shared assets on entry and removes play-time
 //! resources on unload, while persistent settings remain available.
@@ -160,7 +161,7 @@ impl Default for HexPathsAppearance {
         Self {
             panel_width: 340.,
             zoom_per_line: 150.,
-            grid: Color::srgb(0.25, 0.28, 0.32),
+            grid: Color::srgba(0., 0., 0., 0.125),
             grid_lift: 0.03,
             palette: vec![
                 (0., rgb(110, 142, 96)),
@@ -292,8 +293,8 @@ pub struct Pad(pub usize);
 
 /// The displayed role of a billboard spawned from a [`Board`]'s layout.
 ///
-/// [`paint_markers`](super::systems::paint_markers) selects a [`Billboards`] material from
-/// this value and [`HexPathsView::reveal_nodes`]. Crossing nodes use gizmo
+/// [`Self::material`] selects a [`Billboards`] image from this value and
+/// [`HexPathsView::reveal_nodes`], both at spawn and on view changes. Crossing nodes use gizmo
 /// outlines rather than billboard markers.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Marker {
@@ -305,6 +306,30 @@ pub enum Marker {
     Poi(Option<Card>),
     /// A bench node, shown as unknown until nodes are revealed.
     Bench,
+}
+
+impl Marker {
+    /// Selects this marker's image for the current reveal state.
+    ///
+    /// Spawn and player images are always shown; other roles remain unknown
+    /// until revealed. Used both at spawn and by view-change updates.
+    pub fn material(
+        &self,
+        view: &HexPathsView,
+        billboards: &Billboards,
+    ) -> Handle<StandardMaterial> {
+        match self {
+            Self::Spawn => &billboards.spawn,
+            Self::Player => &billboards.player,
+            _ if !view.reveal_nodes => &billboards.unknown,
+            Self::Bench => &billboards.bench,
+            Self::Poi(None) => &billboards.empty,
+            Self::Poi(Some(Card::Key)) => &billboards.key,
+            Self::Poi(Some(Card::Npc)) => &billboards.npc,
+            Self::Poi(Some(Card::Fear)) => &billboards.fear,
+        }
+        .clone()
+    }
 }
 
 /// Marks the orbit camera reserved for this dev screen's board preview.
@@ -398,3 +423,18 @@ pub enum CameraFocus {
     /// The node on this tile, from close by.
     Node(usize),
 }
+
+/// Requests a surface rebuild using the current [`Board`] and preview settings.
+///
+/// [`refresh_preview`](super::systems::refresh_preview) bridges resource changes
+/// to this event; [`spawn_surface`](super::systems::spawn_surface) observes it.
+#[derive(Event)]
+pub struct RebuildSurface;
+
+/// Requests replacement of the current [`Board`]'s billboard markers.
+///
+/// Board and appearance changes trigger this through
+/// [`refresh_preview`](super::systems::refresh_preview). View changes update
+/// materials without replacing the marker entities.
+#[derive(Event)]
+pub struct RebuildMarkers;

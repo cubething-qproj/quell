@@ -22,7 +22,7 @@ pub fn plugin(app: &mut App) {
         .insert_gizmo_config(
             HexPathsGizmos,
             GizmoConfig {
-                render_layers: RenderLayers::layer(31),
+                render_layers: RenderLayers::from(RenderLayer::HEX_PREVIEW),
                 ..default()
             },
         );
