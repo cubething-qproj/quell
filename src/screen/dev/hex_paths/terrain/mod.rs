@@ -160,6 +160,109 @@ impl Terrain {
             .filter_map(|(t, below)| below.and_then(|n| self.mesh.shared_side(t, n)))
             .collect()
     }
+
+    /// Per-point amounts from per-corner ones: centres take the mean of their
+    /// corners.
+    pub fn corner_amounts(&self, corners: &[f32]) -> Vec<f32> {
+        let centres = self
+            .mesh
+            .tile_corners
+            .iter()
+            .map(|tile| tile.iter().map(|&c| corners[c]).sum::<f32>() / 6.);
+        corners.iter().copied().chain(centres).collect()
+    }
+
+    /// Per-point amounts from per-tile ones: corners take the mean of the tiles
+    /// they belong to.
+    pub fn tile_amounts(&self, tiles: &[f32]) -> Vec<f32> {
+        let mesh = &self.mesh;
+        let mut sums = vec![(0., 0.); mesh.positions.len()];
+        for (corners, &amount) in mesh.tile_corners.iter().zip(tiles) {
+            for &c in corners {
+                sums[c].0 += amount;
+                sums[c].1 += 1.;
+            }
+        }
+        sums.into_iter()
+            .map(|(sum, count)| sum / count)
+            .chain(tiles.iter().copied())
+            .collect()
+    }
+
+    /// Lists interior tiles off the creeks, used for ordinary node placement.
+    ///
+    /// Indices refer to [`Terrain::mesh`]. Crossing placement uses these tiles to
+    /// measure whether each disconnected corner part has room for landmarks.
+    pub fn dry_tiles(&self) -> Vec<usize> {
+        let interior = self.mesh.interior();
+        (0..self.mesh.tiles.len())
+            .filter(|&t| interior[t] && !self.creeks.on(t))
+            .collect()
+    }
+
+    /// Builds a per-edge barrier mask, opening creek sides on crossing-pad perimeters.
+    ///
+    /// Begins with [`Terrain::creek_sides`]. `crossings` holds tile indices, not
+    /// node or edge indices. [`Layout`](super::layout::Layout) stores the resulting mask for routing.
+    pub fn creek_closed(&self, crossings: &[usize]) -> Vec<bool> {
+        let mut closed = vec![false; self.mesh.edges.len()];
+        self.creek_sides()
+            .into_iter()
+            .for_each(|e| closed[e] = true);
+        for &t in crossings {
+            self.mesh
+                .perimeter(t)
+                .into_iter()
+                .for_each(|e| closed[e] = false);
+        }
+        closed
+    }
+
+    /// Labels corners by connected part under creek barriers and extra closed edges.
+    ///
+    /// Union-find joins the endpoints of every playable edge not shut by
+    /// [`Self::creek_closed`] or `closed`. The latter contains edge indices;
+    /// `crossings` contains tile indices. Equal labels mean corners can reach
+    /// each other on the available ground, before trails are laid. Labels are
+    /// representative corner indices, not dense or stable part IDs.
+    pub fn corner_parts(&self, crossings: &[usize], closed: &[usize]) -> Vec<usize> {
+        let mesh = &self.mesh;
+        let mut shut = self.creek_closed(crossings);
+        closed.iter().for_each(|&e| shut[e] = true);
+        let mut parent: Vec<usize> = (0..mesh.positions.len()).collect();
+        /// Finds a corner's union-find representative, shortening its parent chain.
+        fn find(parent: &mut [usize], mut x: usize) -> usize {
+            while parent[x] != x {
+                parent[x] = parent[parent[x]];
+                x = parent[x];
+            }
+            x
+        }
+        for (e, &[a, b]) in mesh.edges.iter().enumerate() {
+            if mesh.playable_edges[e] && !shut[e] {
+                let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+                parent[ra] = rb;
+            }
+        }
+        (0..parent.len()).map(|x| find(&mut parent, x)).collect()
+    }
+
+    /// Marks tiles forbidden to ordinary nodes under the current creek barriers.
+    ///
+    /// Creek and non-interior tiles stay forbidden. An interior dry tile is allowed
+    /// when its first corner shares spawn's corner-part label from [`Self::corner_parts`].
+    /// The mask becomes a hard [`Constraints`](sites::Constraints)
+    /// exclusion during placement.
+    pub fn cut_off(&self, crossings: &[usize], spawn: usize) -> Vec<bool> {
+        let label = self.corner_parts(crossings, &[]);
+        let corners = &self.mesh.tile_corners;
+        let home = label[corners[spawn][0]];
+        let mut cut = vec![true; self.mesh.tiles.len()];
+        for t in self.dry_tiles() {
+            cut[t] = label[corners[t][0]] != home;
+        }
+        cut
+    }
 }
 
 /// Expands corner heights into the point order used by [`HexMesh::triangles`].
@@ -207,9 +310,17 @@ pub(super) mod tests {
             margin: 4,
             ..default()
         };
-        let region = Region::simulate(&RegionKey::new(seed, &settings, &tuning), &mut StdRng::seed_from_u64(seed));
-        let terrain = Terrain::generate(&settings, &tuning, &region, &mut StdRng::seed_from_u64(seed))
-            .expect("the board fits the region");
+        let region = Region::simulate(
+            &RegionKey::new(seed, &settings, &tuning),
+            &mut StdRng::seed_from_u64(seed),
+        );
+        let terrain = Terrain::generate(
+            &settings,
+            &tuning,
+            &region,
+            &mut StdRng::seed_from_u64(seed),
+        )
+        .expect("the board fits the region");
         (settings, tuning, terrain)
     }
 
@@ -218,7 +329,9 @@ pub(super) mod tests {
         let (_, tuning, terrain) = small(3);
         let costs = terrain.step_costs(&terrain.heights, tuning.aversion);
         let flat = terrain.step_costs(&vec![0.; terrain.heights.len()], tuning.aversion);
-        for ((cost, flat_cost), &playable) in costs.iter().zip(flat).zip(&terrain.mesh.playable_edges) {
+        for ((cost, flat_cost), &playable) in
+            costs.iter().zip(flat).zip(&terrain.mesh.playable_edges)
+        {
             assert_eq!(cost.is_finite(), playable);
             assert!(!playable || (*cost >= 1. && flat_cost == 1.));
         }

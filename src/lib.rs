@@ -14,6 +14,9 @@
 
 /// See [framework::screen]
 pub mod screen;
+
+/// Reusable screen-independent components and systems.
+pub mod common;
 /// See [docs::architecture#modules]
 pub mod service;
 
@@ -21,6 +24,7 @@ mod plugin;
 pub use plugin::{AppPlugin, AppSettings};
 
 pub mod prelude {
+    pub use super::common::prelude::*;
     pub use super::screen::prelude::*;
     pub use super::service::prelude::*;
 

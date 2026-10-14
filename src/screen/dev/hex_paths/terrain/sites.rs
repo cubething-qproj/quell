@@ -56,16 +56,22 @@ pub fn suitability(mesh: &HexMesh, heights: &[f32]) -> Vec<f32> {
 /// margin viewers or viewers with no neighbours in range. [`Terrain`](super::Terrain)
 /// ranks `1 - open` as quiet and `overlook` as a view for bench placement.
 /// This uses the original [`Raster`]; layout landmark sight uses levelled pads.
-pub fn views(mesh: &HexMesh, raster: &Raster, radius: f32, eye: f32, drop: f32) -> (Vec<f32>, Vec<f32>) {
+pub fn views(
+    mesh: &HexMesh,
+    raster: &Raster,
+    radius: f32,
+    eye: f32,
+    drop: f32,
+) -> (Vec<f32>, Vec<f32>) {
     let ground: Vec<f32> = mesh.centers.iter().map(|&c| raster.sample(c)).collect();
     let mut open = vec![0.; mesh.tiles.len()];
     let mut overlook = vec![0.; mesh.tiles.len()];
     for tile in (0..mesh.tiles.len()).filter(|&t| mesh.playable[t]) {
         let (from, eye) = (mesh.centers[tile], ground[tile] + eye);
         let (mut count, mut seen_count, mut lower) = (0., 0., 0.);
-        for other in (0..mesh.tiles.len()).filter(|&o| {
-            o != tile && mesh.centers[o].distance(from) <= radius * SQRT_3
-        }) {
+        for other in (0..mesh.tiles.len())
+            .filter(|&o| o != tile && mesh.centers[o].distance(from) <= radius * SQRT_3)
+        {
             let to = mesh.centers[other];
             // Sight line to the ground at the other tile's centre.
             let seen = (1..17).map(|k| k as f32 / 17.).all(|f| {
@@ -155,7 +161,10 @@ pub fn place(
                 .min(2. * mesh.border_distance[t])
         })
         .collect();
-    let jitter: Vec<f32> = distance.iter().map(|_| rng.random_range(0.9..1.0)).collect();
+    let jitter: Vec<f32> = distance
+        .iter()
+        .map(|_| rng.random_range(0.9..1.0))
+        .collect();
     let spaced = |t: usize| distance[t] >= spacing && constraints.room.is_none_or(|r| r[t]);
     let free = |t: usize| distance[t] > 0.;
     let tiers: [&dyn Fn(usize) -> bool; 3] = [
@@ -164,12 +173,10 @@ pub fn place(
         &|t| allowed(t) && free(t),
     ];
     tiers.iter().find_map(|tier| {
-        (0..mesh.tiles.len())
-            .filter(|&t| tier(t))
-            .max_by(|&a, &b| {
-                let s = |t: usize| distance[t] * score[t] * jitter[t];
-                s(a).total_cmp(&s(b))
-            })
+        (0..mesh.tiles.len()).filter(|&t| tier(t)).max_by(|&a, &b| {
+            let s = |t: usize| distance[t] * score[t] * jitter[t];
+            s(a).total_cmp(&s(b))
+        })
     })
 }
 

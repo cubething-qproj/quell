@@ -15,9 +15,7 @@ use super::{data::*, layout::NodeKind, systems};
 use crate::prelude::*;
 use bevy::{
     feathers::{
-        controls::{
-            FeathersButton, FeathersSlider, FeathersTextInput, FeathersTextInputContainer,
-        },
+        controls::{FeathersButton, FeathersSlider, FeathersTextInput, FeathersTextInputContainer},
         display::{label, label_small},
         theme::ThemeBackgroundColor,
         tokens,
@@ -126,7 +124,14 @@ fn relayout(
 ) + Clone {
     move |_, settings, tuning, mut view, board, mut panel| {
         if let Some(mut board) = board {
-            systems::relayout(regeneration, &settings, &tuning, &mut view, &mut board, &mut panel);
+            systems::relayout(
+                regeneration,
+                &settings,
+                &tuning,
+                &mut view,
+                &mut board,
+                &mut panel,
+            );
         }
     }
 }
@@ -164,7 +169,9 @@ fn set_slider(
     fields: Query<&SettingSlider>,
     mut settings: ResMut<HexPathsSettings>,
 ) {
-    commands.entity(change.source).insert(SliderValue(change.value));
+    commands
+        .entity(change.source)
+        .insert(SliderValue(change.value));
     if change.is_final
         && let Ok(field) = fields.get(change.source)
     {
@@ -255,7 +262,11 @@ pub(super) fn update_stats(
     );
     if let Some(board) = board {
         let layout = &board.layout;
-        let crossings = layout.nodes.iter().filter(|n| n.kind == NodeKind::Crossing).count();
+        let crossings = layout
+            .nodes
+            .iter()
+            .filter(|n| n.kind == NodeKind::Crossing)
+            .count();
         let window = &board.terrain.features;
         value.push_str(&format!(
             "\nWindow: relief {:.0} m | creek tiles {} | ford sites {} | tease spots {}\n\

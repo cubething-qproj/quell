@@ -38,8 +38,10 @@ impl Raster {
     /// raster boundary. This is the common sampler for terrain corners and the
     /// ground sight lines in [`views`](super::sites::views).
     pub fn sample(&self, point: Vec2) -> f32 {
-        let at = ((point - self.origin) * self.res)
-            .clamp(Vec2::ZERO, Vec2::new(self.width as f32 - 1., self.height as f32 - 1.));
+        let at = ((point - self.origin) * self.res).clamp(
+            Vec2::ZERO,
+            Vec2::new(self.width as f32 - 1., self.height as f32 - 1.),
+        );
         let (x0, y0) = (at.x.floor() as usize, at.y.floor() as usize);
         let (x1, y1) = ((x0 + 1).min(self.width - 1), (y0 + 1).min(self.height - 1));
         let (fx, fy) = (at.x.fract(), at.y.fract());

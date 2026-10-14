@@ -23,10 +23,8 @@ use super::{
 };
 use crate::prelude::*;
 use bevy::{
-    asset::RenderAssetUsages,
     camera::Viewport,
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
-    mesh::{Indices, PrimitiveTopology},
     window::PrimaryWindow,
 };
 use bevy_editor_cam::prelude::EditorCam;
@@ -153,7 +151,7 @@ pub(super) fn relayout(
 
 /// Rebuilds the [`TerrainSurface`] child beneath the current [`BoardRoot`].
 ///
-/// [`surface_mesh`] uses [`Layout::heights`] for levelled ground, applies
+/// [`Board::surface_mesh`] uses [`Layout::heights`] for levelled ground, applies
 /// appearance exaggeration, and colours it with height, hillshade, and the
 /// selected [`TerrainView`]. Scheduled when board, view, or appearance changes;
 /// does nothing if the board or its single root is absent.
@@ -178,13 +176,7 @@ pub(super) fn spawn_surface(
     commands.spawn((
         TerrainSurface,
         Name::new("Terrain"),
-        Mesh3d(meshes.add(surface_mesh(
-            &board,
-            &settings,
-            &tuning,
-            view.view,
-            &appearance,
-        ))),
+        Mesh3d(meshes.add(board.surface_mesh(&settings, &tuning, view.view, &appearance))),
         MeshMaterial3d(materials.add(StandardMaterial {
             unlit: true,
             ..default()
@@ -215,7 +207,11 @@ pub(super) fn spawn_markers(
         commands.entity(marker).despawn();
     }
     let layout = &board.layout;
-    let start = if board.regenerated { Marker::Player } else { Marker::Spawn };
+    let start = if board.regenerated {
+        Marker::Player
+    } else {
+        Marker::Spawn
+    };
     let nodes = layout.nodes.iter().filter_map(|node| match node.kind {
         NodeKind::Poi => Some((node.tile, Marker::Poi(node.card))),
         NodeKind::Bench => Some((node.tile, Marker::Bench)),
@@ -313,20 +309,6 @@ pub(super) fn pick_focus(
         if view.focus != focus {
             view.focus = focus;
         }
-    }
-}
-
-/// Copies the board camera's rotation to every [`Billboard`] quad each frame.
-///
-/// Currently targets [`HexPathsCamera`], not whichever camera is globally
-/// active. If moved into common code for multiple cameras, a `BillboardTarget`
-/// relationship could make the intended camera explicit for each billboard.
-pub(super) fn face_camera(
-    camera: Single<&Transform, (With<HexPathsCamera>, Without<Billboard>)>,
-    mut billboards: Query<&mut Transform, With<Billboard>>,
-) {
-    for mut transform in &mut billboards {
-        transform.rotation = camera.rotation;
     }
 }
 
@@ -429,9 +411,10 @@ pub(super) fn orbit_camera(
     }
     controller.send_zoom_input(zoom);
     // A wheel zoom ends once its smoothed input settles.
-    let settled = controller.current_motion.inputs().is_none_or(|inputs| {
-        inputs.zoom_velocity_abs(controller.smoothing.zoom.mul_f32(2.)) == 0.
-    });
+    let settled = controller
+        .current_motion
+        .inputs()
+        .is_none_or(|inputs| inputs.zoom_velocity_abs(controller.smoothing.zoom.mul_f32(2.)) == 0.);
     if controller.current_motion.is_zooming_only() && settled {
         controller.end_move();
     }
@@ -453,7 +436,10 @@ pub(super) fn draw_board(
     let corner = |c: usize, lift: f32| world(mesh.positions[c], layout.heights[c] * scale + lift);
     let points = point_heights(mesh, &layout.heights);
     let centre = |t: usize, lift: f32| {
-        world(mesh.centers[t], points[mesh.positions.len() + t] * scale + lift)
+        world(
+            mesh.centers[t],
+            points[mesh.positions.len() + t] * scale + lift,
+        )
     };
     for (corners, _) in mesh
         .tile_corners
@@ -462,7 +448,10 @@ pub(super) fn draw_board(
         .filter(|(_, playable)| **playable)
     {
         gizmos.linestrip(
-            corners.iter().chain([&corners[0]]).map(|&c| corner(c, appearance.grid_lift)),
+            corners
+                .iter()
+                .chain([&corners[0]])
+                .map(|&c| corner(c, appearance.grid_lift)),
             appearance.grid,
         );
     }
@@ -475,7 +464,10 @@ pub(super) fn draw_board(
     for node in layout.nodes.iter().filter(|n| n.kind == NodeKind::Crossing) {
         let corners = mesh.tile_corners[node.tile];
         gizmos.linestrip(
-            corners.iter().chain([&corners[0]]).map(|&c| corner(c, 2. * lift)),
+            corners
+                .iter()
+                .chain([&corners[0]])
+                .map(|&c| corner(c, 2. * lift)),
             appearance.crossing,
         );
     }
@@ -504,199 +496,4 @@ pub(super) fn draw_board(
             );
         }
     }
-}
-
-/// Builds the visible mesh from levelled corner heights and mean-height tile centres.
-///
-/// Uses [`point_heights`] and the terrain mesh's triangles,
-/// corrects winding to face up, and computes area-weighted vertex normals.
-/// Normals drive hillshade; [`view_tint`] blends the chosen measure over an
-/// absolute metre-height palette. Scenery fades toward paper. Vertical
-/// exaggeration changes positions and shading, but not the palette's heights.
-fn surface_mesh(
-    board: &Board,
-    settings: &HexPathsSettings,
-    tuning: &HexTerrainTuning,
-    view: TerrainView,
-    appearance: &HexPathsAppearance,
-) -> Mesh {
-    let terrain = &board.terrain;
-    let mesh = &terrain.mesh;
-    let heights = point_heights(mesh, &board.layout.heights);
-    let positions: Vec<Vec3> = mesh
-        .positions
-        .iter()
-        .chain(&mesh.centers)
-        .zip(&heights)
-        .map(|(&p, &h)| world(p, h * appearance.vertical_scale))
-        .collect();
-    // Wind every triangle to face up.
-    let triangles: Vec<[usize; 3]> = mesh
-        .triangles()
-        .map(|[a, b, c]| {
-            let up = (positions[b] - positions[a])
-                .cross(positions[c] - positions[a])
-                .y;
-            if up >= 0. { [a, b, c] } else { [a, c, b] }
-        })
-        .collect();
-    let mut normals = vec![Vec3::ZERO; positions.len()];
-    for &[a, b, c] in &triangles {
-        // Unnormalised, so larger triangles weigh more.
-        let normal = (positions[b] - positions[a]).cross(positions[c] - positions[a]);
-        [a, b, c].iter().for_each(|&i| normals[i] += normal);
-    }
-    let normals: Vec<Vec3> = normals.into_iter().map(Vec3::normalize_or_zero).collect();
-    let inside: Vec<bool> = mesh
-        .playable_corners()
-        .into_iter()
-        .chain(mesh.playable.iter().copied())
-        .collect();
-    let light = appearance.light.normalize();
-    let paper = appearance.paper.to_linear();
-    let tint = view_tint(board, settings, tuning, view, appearance);
-    let colours: Vec<[f32; 4]> = heights
-        .iter()
-        .enumerate()
-        .zip(&normals)
-        .zip(&inside)
-        .map(|(((i, &h), &n), &inside)| {
-            let shade =
-                appearance.shade_floor + appearance.shade_gain * n.dot(light).max(0.) / light.y;
-            let base = tint.base.unwrap_or_else(|| appearance.ramp(h * tuning.edge_m));
-            let lit = (base * shade).mix(&tint.colours[i], tint.amounts[i]);
-            let veil = if inside { 0. } else { appearance.margin_veil };
-            lit.mix(&paper, veil).with_alpha(1.).to_f32_array()
-        })
-        .collect();
-    Mesh::new(
-        PrimitiveTopology::TriangleList,
-        RenderAssetUsages::default(),
-    )
-    .with_inserted_attribute(Mesh::ATTRIBUTE_POSITION, positions)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_NORMAL, normals)
-    .with_inserted_attribute(Mesh::ATTRIBUTE_COLOR, colours)
-    .with_inserted_indices(Indices::U32(
-        triangles.into_iter().flatten().map(|i| i as u32).collect(),
-    ))
-}
-
-/// Creates per-point colour targets and weights for the selected [`TerrainView`].
-///
-/// Heightmap contributes no tint. Cost uses levelled-ground steepness;
-/// suitability uses original terrain scores sharpened by spread; BenchScore
-/// blends quiet and overlook shares over paper. Arrays follow corners, then
-/// tile centres, matching [`Tint`] and the surface point order.
-fn view_tint(
-    board: &Board,
-    settings: &HexPathsSettings,
-    tuning: &HexTerrainTuning,
-    view: TerrainView,
-    appearance: &HexPathsAppearance,
-) -> Tint {
-    let terrain = &board.terrain;
-    let mesh = &terrain.mesh;
-    let points = mesh.positions.len() + mesh.tiles.len();
-    let single = |colour: Color, amounts: Vec<f32>| Tint {
-        base: None,
-        colours: vec![colour.to_linear(); points],
-        amounts,
-    };
-    match view {
-        TerrainView::Heightmap => single(Color::NONE, vec![0.; points]),
-        TerrainView::Cost => single(
-            appearance.cost,
-            corner_amounts(terrain, &steepness(board, tuning, appearance)),
-        ),
-        TerrainView::Suitability => single(
-            appearance.score,
-            tile_amounts(
-                terrain,
-                &terrain
-                    .suitability
-                    .iter()
-                    .map(|s| s.powf(settings.spread))
-                    .collect::<Vec<_>>(),
-            ),
-        ),
-        TerrainView::BenchScore => {
-            let quiet = tile_amounts(terrain, &terrain.bench_quiet);
-            let overlook = tile_amounts(terrain, &terrain.bench_overlook);
-            let (quiet_colour, overlook_colour) =
-                (appearance.quiet.to_linear(), appearance.overlook.to_linear());
-            Tint {
-                base: Some(appearance.paper.to_linear()),
-                colours: quiet
-                    .iter()
-                    .zip(&overlook)
-                    .map(|(q, o)| {
-                        let towards_overlook = o / (q + o).max(f32::EPSILON);
-                        quiet_colour.mix(&overlook_colour, towards_overlook)
-                    })
-                    .collect(),
-                amounts: quiet.iter().zip(&overlook).map(|(q, o)| (q + o).min(1.)).collect(),
-            }
-        }
-    }
-}
-
-/// Each corner's steepest edge over the levelled ground as
-/// `aversion × |rise|`, the log of the step cost, scaled so the top few
-/// percent of playable edges reach 1.
-fn steepness(
-    board: &Board,
-    tuning: &HexTerrainTuning,
-    appearance: &HexPathsAppearance,
-) -> Vec<f32> {
-    let mesh = &board.terrain.mesh;
-    let steepness: Vec<f32> = board
-        .terrain
-        .step_costs(&board.layout.heights, tuning.aversion)
-        .into_iter()
-        .map(f32::ln)
-        .collect();
-    let mut playable: Vec<f32> = steepness.iter().copied().filter(|s| s.is_finite()).collect();
-    playable.sort_by(f32::total_cmp);
-    let top = playable
-        .get(((playable.len() as f32 - 1.) * appearance.cost_percentile) as usize)
-        .copied()
-        .unwrap_or(1.)
-        .max(f32::EPSILON);
-    let mut corners = vec![0f32; mesh.positions.len()];
-    for (&[a, b], &s) in mesh.edges.iter().zip(&steepness) {
-        if s.is_finite() {
-            let amount = (s / top).min(1.);
-            corners[a] = corners[a].max(amount);
-            corners[b] = corners[b].max(amount);
-        }
-    }
-    corners
-}
-
-/// Per-point amounts from per-corner ones: centres take the mean of their
-/// corners.
-fn corner_amounts(terrain: &Terrain, corners: &[f32]) -> Vec<f32> {
-    let centres = terrain
-        .mesh
-        .tile_corners
-        .iter()
-        .map(|tile| tile.iter().map(|&c| corners[c]).sum::<f32>() / 6.);
-    corners.iter().copied().chain(centres).collect()
-}
-
-/// Per-point amounts from per-tile ones: corners take the mean of the tiles
-/// they belong to.
-fn tile_amounts(terrain: &Terrain, tiles: &[f32]) -> Vec<f32> {
-    let mesh = &terrain.mesh;
-    let mut sums = vec![(0., 0.); mesh.positions.len()];
-    for (corners, &amount) in mesh.tile_corners.iter().zip(tiles) {
-        for &c in corners {
-            sums[c].0 += amount;
-            sums[c].1 += 1.;
-        }
-    }
-    sums.into_iter()
-        .map(|(sum, count)| sum / count)
-        .chain(tiles.iter().copied())
-        .collect()
 }

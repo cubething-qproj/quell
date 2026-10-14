@@ -73,7 +73,11 @@ impl Creeks {
             .filter(|&t| interior[t] && self.on(t))
             .map(|t| self.flow_ha[t])
             .fold(0., f32::max);
-        if biggest > 0. { biggest / 2. } else { f32::INFINITY }
+        if biggest > 0. {
+            biggest / 2.
+        } else {
+            f32::INFINITY
+        }
     }
 }
 
@@ -178,7 +182,9 @@ impl Window {
         let (min, max) = mesh
             .positions
             .iter()
-            .fold((Vec2::MAX, Vec2::MIN), |(lo, hi), &p| (lo.min(p), hi.max(p)));
+            .fold((Vec2::MAX, Vec2::MIN), |(lo, hi), &p| {
+                (lo.min(p), hi.max(p))
+            });
         let (origin, extent) = (min - 2., max + 4. - min);
         let middle = origin + extent / 2.;
         let radius = extent.length() / 2. + 2.;
@@ -191,12 +197,18 @@ impl Window {
         for _ in 0..tuning.candidates {
             let frame = Frame {
                 middle,
-                centre: Vec2::new(rng.random_range(radius..far_edge), rng.random_range(radius..far_edge)),
+                centre: Vec2::new(
+                    rng.random_range(radius..far_edge),
+                    rng.random_range(radius..far_edge),
+                ),
                 rotation: Mat2::from_angle(rng.random_range(0. ..TAU)),
             };
             let creeks = trace(mesh, region, settings.creek_ha, &frame, (origin, extent));
             let window = rank(mesh, region, creeks, &frame, tuning, &lines);
-            if best.as_ref().is_none_or(|(b, _)| window.features.score > b.features.score) {
+            if best
+                .as_ref()
+                .is_none_or(|(b, _)| window.features.score > b.features.score)
+            {
                 best = Some((window, frame));
             }
         }
@@ -205,7 +217,8 @@ impl Window {
         let (width, height) = (size.x as usize, size.y as usize);
         let data = (0..width * height)
             .map(|i| {
-                let point = origin + Vec2::new((i / height) as f32, (i % height) as f32) / tuning.resolution;
+                let point = origin
+                    + Vec2::new((i / height) as f32, (i % height) as f32) / tuning.resolution;
                 let at = frame.to_region(point);
                 region.sample_cubic(at.x as f64, at.y as f64) as f32 / tuning.edge_m
             })
@@ -270,7 +283,9 @@ fn trace(
     // A channel passing near a hex corner can skip a tile between two cells;
     // fill such gaps with the tiles along the straight line, so every creek
     // link joins neighbouring tiles (and closes exactly one side).
-    let linked: Vec<usize> = (0..mesh.tiles.len()).filter(|&t| downstream[t].is_some()).collect();
+    let linked: Vec<usize> = (0..mesh.tiles.len())
+        .filter(|&t| downstream[t].is_some())
+        .collect();
     for t in linked {
         let Some(n) = downstream[t] else { continue };
         let (a, b) = (mesh.centers[t], mesh.centers[n]);
@@ -314,27 +329,46 @@ fn rank(
     lines: &SightLines,
 ) -> Window {
     let w = &tuning.window;
-    let centre_m: Vec<f32> = mesh.centers.iter().map(|&c| frame.height(region, c)).collect();
-    let corner_m: Vec<f32> = mesh.positions.iter().map(|&p| frame.height(region, p)).collect();
+    let centre_m: Vec<f32> = mesh
+        .centers
+        .iter()
+        .map(|&c| frame.height(region, c))
+        .collect();
+    let corner_m: Vec<f32> = mesh
+        .positions
+        .iter()
+        .map(|&p| frame.height(region, p))
+        .collect();
     let interior = mesh.interior();
-    let creek: Vec<bool> = (0..mesh.tiles.len()).map(|t| creeks.on(t) && mesh.playable[t]).collect();
+    let creek: Vec<bool> = (0..mesh.tiles.len())
+        .map(|t| creeks.on(t) && mesh.playable[t])
+        .collect();
     let (low, high) = mesh
         .tile_corners
         .iter()
         .zip(&mesh.playable)
         .filter(|(_, playable)| **playable)
         .flat_map(|(corners, _)| corners)
-        .fold((f32::MAX, f32::MIN), |(lo, hi), &c| (lo.min(corner_m[c]), hi.max(corner_m[c])));
+        .fold((f32::MAX, f32::MIN), |(lo, hi), &c| {
+            (lo.min(corner_m[c]), hi.max(corner_m[c]))
+        });
     let relief = high - low;
-    let bank: Vec<f32> = mesh.tile_corners.iter().map(|c| bank_span(c.map(|c| corner_m[c]))).collect();
+    let bank: Vec<f32> = mesh
+        .tile_corners
+        .iter()
+        .map(|c| bank_span(c.map(|c| corner_m[c])))
+        .collect();
     let main = creeks.main_ha(mesh);
     let mut sites: Vec<usize> = (0..mesh.tiles.len())
-        .filter(|&t| creek[t] && interior[t] && creeks.flow_ha[t] >= main && bank[t] <= w.ford_bank_m)
+        .filter(|&t| {
+            creek[t] && interior[t] && creeks.flow_ha[t] >= main && bank[t] <= w.ford_bank_m
+        })
         .collect();
     sites.sort_by(|&a, &b| bank[a].total_cmp(&bank[b]));
     let mut fords: Vec<usize> = Vec::new();
     for t in sites {
-        let spaced = |f: &usize| mesh.centers[t].distance(mesh.centers[*f]) >= w.ford_spacing * SQRT_3;
+        let spaced =
+            |f: &usize| mesh.centers[t].distance(mesh.centers[*f]) >= w.ford_spacing * SQRT_3;
         if fords.iter().all(spaced) {
             fords.push(t);
         }
@@ -372,7 +406,12 @@ fn rank(
     let score = w.creek * full(creek_tiles as f32, w.creek_tiles)
         + w.fords * full(fords.len() as f32, w.fords_wanted)
         + w.teases * full(teases.len() as f32, w.viewers)
-        + w.relief * if (w.relief_m.x..=w.relief_m.y).contains(&relief) { 1. } else { 0. }
+        + w.relief
+            * if (w.relief_m.x..=w.relief_m.y).contains(&relief) {
+                1.
+            } else {
+                0.
+            }
         - w.river * if biggest > w.river_ha { 1. } else { 0. };
     Window {
         raster: Raster {

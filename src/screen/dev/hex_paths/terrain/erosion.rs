@@ -133,7 +133,11 @@ impl Region {
     pub fn simulate(key: &RegionKey, rng: &mut impl Rng) -> Self {
         let size = (key.hexes as f64 * 1.5) as usize;
         let cell = key.edge_m as f64;
-        let white = |rng: &mut _| (0..size * size).map(|_| standard_normal(rng)).collect::<Vec<_>>();
+        let white = |rng: &mut _| {
+            (0..size * size)
+                .map(|_| standard_normal(rng))
+                .collect::<Vec<_>>()
+        };
         let rolls = blur(white(rng), size, size, key.roll_size_m / key.edge_m / 2.);
         let deviation = std_dev(&rolls);
         let rough = white(rng);
@@ -316,9 +320,14 @@ impl Region {
         let (x, y) = ((i / self.size) as isize, (i % self.size) as isize);
         NEIGHBOURS.iter().filter_map(move |&(dx, dy)| {
             let (a, b) = (x + dx, y + dy);
-            let inside = (0..self.size as isize).contains(&a) && (0..self.size as isize).contains(&b);
+            let inside =
+                (0..self.size as isize).contains(&a) && (0..self.size as isize).contains(&b);
             inside.then(|| {
-                let distance = if dx != 0 && dy != 0 { std::f64::consts::SQRT_2 } else { 1. };
+                let distance = if dx != 0 && dy != 0 {
+                    std::f64::consts::SQRT_2
+                } else {
+                    1.
+                };
                 (a as usize * self.size + b as usize, distance)
             })
         })
@@ -345,7 +354,10 @@ mod tests {
             iterations: 40,
             ..default()
         };
-        Region::simulate(&RegionKey::new(1, &settings, &tuning), &mut StdRng::seed_from_u64(1))
+        Region::simulate(
+            &RegionKey::new(1, &settings, &tuning),
+            &mut StdRng::seed_from_u64(1),
+        )
     }
 
     #[test]

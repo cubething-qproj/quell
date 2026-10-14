@@ -32,23 +32,23 @@ impl Screen for HexPathsScreen {
             ScreenSchedule::Update,
             (
                 systems::spawn_board.run_if(
-                    resource_changed::<HexPathsSettings>.or_else(resource_changed::<HexTerrainTuning>),
+                    resource_changed::<HexPathsSettings>
+                        .or_else(resource_changed::<HexTerrainTuning>),
                 ),
                 systems::spawn_surface.run_if(
                     resource_exists_and_changed::<Board>
                         .or_else(resource_changed::<HexPathsView>)
                         .or_else(resource_changed::<HexPathsAppearance>),
                 ),
-                systems::spawn_markers.run_if(
-                    resource_exists_and_changed::<Board>
-                        .or_else(resource_exists::<Board>.and_then(resource_changed::<HexPathsAppearance>)),
-                ),
+                systems::spawn_markers.run_if(resource_exists_and_changed::<Board>.or_else(
+                    resource_exists::<Board>.and_then(resource_changed::<HexPathsAppearance>),
+                )),
                 systems::paint_markers,
                 systems::fit_viewport,
                 systems::pick_focus,
                 systems::aim_camera,
                 systems::orbit_camera,
-                systems::face_camera,
+                face_camera::<HexPathsCamera>,
                 systems::draw_board,
                 panel::sync_settings,
                 panel::update_stats,
@@ -111,9 +111,9 @@ fn init(
     let height = appearance.billboard_height;
     let mut billboard = |name: &str| {
         materials.add(StandardMaterial {
-            base_color_texture: Some(server.load(format!(
-                "textures/hex-prototype/{name}-billboard.png"
-            ))),
+            base_color_texture: Some(
+                server.load(format!("textures/hex-prototype/{name}-billboard.png")),
+            ),
             alpha_mode: AlphaMode::Mask(0.5),
             unlit: true,
             cull_mode: None,

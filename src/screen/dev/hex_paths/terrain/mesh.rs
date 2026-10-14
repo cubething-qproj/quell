@@ -153,7 +153,9 @@ impl HexMesh {
     /// exists. Points beyond the jagged outer boundary can therefore be skipped
     /// when [`window`](super::window) traces creeks.
     pub fn tile_containing(&self, point: Vec2) -> Option<usize> {
-        self.index.get(&HexLayout::flat().world_pos_to_hex(point)).copied()
+        self.index
+            .get(&HexLayout::flat().world_pos_to_hex(point))
+            .copied()
     }
 
     /// The edge between corners `a` and `b`, if they are neighbours.
@@ -268,7 +270,9 @@ mod tests {
         let (min, max) = mesh
             .positions
             .iter()
-            .fold((Vec2::MAX, Vec2::MIN), |(lo, hi), &p| (lo.min(p), hi.max(p)));
+            .fold((Vec2::MAX, Vec2::MIN), |(lo, hi), &p| {
+                (lo.min(p), hi.max(p))
+            });
         for (position, _) in mesh.positions.iter().zip(&inside).filter(|(_, i)| **i) {
             assert!(position.x > min.x + 1. && position.x < max.x - 1.);
             assert!(position.y > min.y + 1. && position.y < max.y - 1.);

@@ -17,7 +17,7 @@
 //! `trunk-sight` arm; the relationships and pipelines are documented here.
 
 use crate::prelude::*;
-use bevy::{feathers::FeathersPlugins, gizmos::config::GizmoConfig};
+use bevy::feathers::FeathersPlugins;
 use bevy_editor_cam::prelude::MinimalEditorCamPlugin;
 
 mod data;
@@ -41,22 +41,6 @@ pub mod prelude {
 /// the screen, rather than running during plugin registration.
 pub fn plugin(app: &mut App) {
     app.add_plugins((FeathersPlugins, MinimalEditorCamPlugin))
-        .init_resource::<data::HexPathsSettings>()
-        .init_resource::<data::HexTerrainTuning>()
-        .init_resource::<data::HexPathsView>()
-        .init_resource::<data::HexPathsAppearance>()
-        .init_resource::<data::PanelState>()
-        .init_resource::<data::RegionCache>()
-        .register_type::<data::HexPathsSettings>()
-        .register_type::<data::HexTerrainTuning>()
-        .register_type::<data::HexPathsView>()
-        .register_type::<data::HexPathsAppearance>()
-        .register_screen::<HexPathsScreen>()
-        .insert_gizmo_config(
-            data::HexPathsGizmos,
-            GizmoConfig {
-                render_layers: RenderLayers::layer(31),
-                ..default()
-            },
-        );
+        .add_plugins(data::plugin)
+        .register_screen::<HexPathsScreen>();
 }
