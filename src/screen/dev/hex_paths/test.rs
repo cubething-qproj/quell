@@ -1,12 +1,18 @@
 //! Selected-schedule checks for board replacement and explicit unload behaviour.
 //!
-//! [`Fixture`] runs [`spawn_board`](systems::spawn_board) on small seeded worlds without
-//! a renderer or panel, but includes surface/marker observers and reveal
-//! updates. Pointer events are injected directly. It steps Update and PostUpdate;
+//! [`Fixture`] uses synthetic ground for presentation checks and a small
+//! eroded region for [`spawn_board`](systems::spawn_board) replacement checks.
+//! It includes surface/marker observers and reveal updates without a renderer
+//! or panel. Pointer events are injected directly. It steps Update and PostUpdate;
 //! unload is called directly. These tests do not exercise the full screen
 //! lifecycle, ray casting, UI occlusion, rendered camera behaviour, or asset readiness.
 
-use super::{data::*, screen, systems};
+use super::{
+    data::*,
+    layout::{Context, Layout},
+    screen, systems,
+    terrain::tests::flat,
+};
 use bevy::{
     camera::NormalizedRenderTarget,
     ecs::schedule::ScheduleLabel,
@@ -22,30 +28,35 @@ use std::time::Duration;
 
 /// A small headless app for board replacement and unload-resource assertions.
 ///
-/// Owns ordinary settings, tuning, view, and cache resources so the generation
-/// system runs with its normal parameters. Selected schedule stepping uses
+/// Owns ordinary settings, tuning, view, and cache resources. Presentation
+/// tests install synthetic terrain; the replacement test runs generation with
+/// its normal parameters. Selected schedule stepping uses
 /// [`InputTestPlugin`] and the test harness's `AppExt` helpers.
 struct Fixture {
     app: App,
 }
 
 impl Fixture {
-    /// Creates and steps a minimal app to generate its first small seeded board.
+    /// Creates the shared app and preview assets without generating a landscape.
     fn new() -> Self {
         let mut app = App::new();
         app.add_plugins((MinimalPlugins, InputTestPlugin))
             .insert_resource(HexPathsSettings {
                 seed: Some(7),
-                columns: 12,
-                rows: 12,
+                columns: 6,
+                rows: 6,
+                pois: 3,
+                benches: 1,
+                crossings: 0,
+                teases: 0,
                 ..default()
             })
-            // A small region, quick enough for debug builds.
+            // Used only by the generation/replacement scenario.
             .insert_resource(HexTerrainTuning {
-                region_hexes: 50,
-                iterations: 120,
-                candidates: 8,
-                margin: 4,
+                region_hexes: 24,
+                iterations: 40,
+                candidates: 2,
+                margin: 2,
                 ..default()
             })
             .init_resource::<PanelState>()
@@ -59,7 +70,6 @@ impl Fixture {
             .add_systems(
                 Update,
                 (
-                    systems::spawn_board.run_if(resource_changed::<HexPathsSettings>),
                     systems::refresh_preview.run_if(
                         resource_exists_and_changed::<Board>
                             .or_else(resource_changed::<HexPathsView>)
@@ -89,7 +99,40 @@ impl Fixture {
         app.insert_resource(billboards);
         app.finish();
         app.cleanup();
-        let mut fixture = Self { app };
+        Self { app }
+    }
+
+    /// Installs a tiny layout over synthetic ground for preview-only checks.
+    fn presentation() -> Self {
+        let mut fixture = Self::new();
+        let world = fixture.app.world_mut();
+        let settings = world.resource::<HexPathsSettings>();
+        let tuning = world.resource::<HexTerrainTuning>();
+        let terrain = flat(settings.columns, settings.rows, tuning.margin);
+        let context = Context {
+            terrain: &terrain,
+            settings,
+            tuning,
+        };
+        let seed = settings.seed.expect("a seeded fixture");
+        let layout = Layout::generate(context, seed, None).expect("a tiny layout");
+        let board = Board::new(terrain, layout, (settings, tuning), seed, 0);
+        world.insert_resource(board);
+        world.insert_resource(BoardStats { seed, error: None });
+        world.spawn((BoardRoot, Transform::default(), Visibility::default()));
+        fixture.tick();
+        fixture
+    }
+
+    /// Enables real generation for the board replacement scenario.
+    fn generated() -> Self {
+        let mut fixture = Self::new();
+        fixture.app.add_systems(
+            Update,
+            systems::spawn_board
+                .run_if(resource_changed::<HexPathsSettings>)
+                .before(systems::refresh_preview),
+        );
         fixture.tick();
         fixture
     }
@@ -103,7 +146,11 @@ impl Fixture {
     /// Checks that successful generation installed one root, a Board, and no generation error.
     fn assert_board_present(&mut self) {
         let world = self.app.world_mut();
-        assert!(world.contains_resource::<Board>());
+        assert!(
+            world.contains_resource::<Board>(),
+            "{:?}",
+            world.resource::<BoardStats>().error
+        );
         assert!(world.resource::<BoardStats>().error.is_none());
         assert_eq!(
             world
@@ -164,7 +211,7 @@ impl Fixture {
 
 #[test]
 fn invalid_settings_clear_the_board_and_valid_settings_restore_it() {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::generated();
     fixture.assert_board_present();
     fixture
         .app
@@ -187,14 +234,14 @@ fn invalid_settings_clear_the_board_and_valid_settings_restore_it() {
         .app
         .world_mut()
         .resource_mut::<HexPathsSettings>()
-        .columns = 10;
+        .columns = 6;
     fixture.tick();
     fixture.assert_board_present();
 }
 
 #[test]
 fn leaving_the_screen_restores_the_ui_cameras_clear_color() {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::presentation();
     let color = Color::srgb(0.2, 0.3, 0.4);
     let clear_color = ClearColorConfig::Custom(color);
     let camera = fixture
@@ -223,7 +270,7 @@ fn leaving_the_screen_restores_the_ui_cameras_clear_color() {
 
 #[test]
 fn reveal_and_layout_rebuilds_keep_marker_images_current() {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::presentation();
     fixture.assert_marker_images();
     let (marker, _, image) = fixture.poi();
     assert_eq!(image, fixture.app.world().resource::<Billboards>().unknown);
@@ -265,7 +312,7 @@ fn reveal_and_layout_rebuilds_keep_marker_images_current() {
 
 #[test]
 fn marker_pointer_presses_only_focus_from_the_board_camera() {
-    let mut fixture = Fixture::new();
+    let mut fixture = Fixture::presentation();
     let camera = fixture.app.world_mut().spawn(HexPathsCamera).id();
     let other_camera = fixture.app.world_mut().spawn_empty().id();
     let (marker, tile, _) = fixture.poi();

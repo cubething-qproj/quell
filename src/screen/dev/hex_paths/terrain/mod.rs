@@ -291,6 +291,32 @@ pub(super) mod tests {
     use super::{erosion::RegionKey, *};
     use rand::{SeedableRng, rngs::StdRng};
 
+    /// Builds flat, dry ground for tests that need a mesh rather than erosion.
+    ///
+    /// Playable tiles have neutral buildability and bench scores. The scenery
+    /// margin supplies off-board edges for routing-cost checks.
+    pub fn flat(columns: u32, rows: u32, margin: u32) -> Terrain {
+        let mesh = HexMesh::build(columns, rows, margin);
+        let tiles = mesh.tiles.len();
+        let scores: Vec<f32> = mesh
+            .playable
+            .iter()
+            .map(|&p| if p { 1. } else { 0. })
+            .collect();
+        Terrain {
+            heights: vec![0.; mesh.positions.len()],
+            creeks: Creeks {
+                flow_ha: vec![0.; tiles],
+                downstream: vec![None; tiles],
+            },
+            features: Features::default(),
+            suitability: scores.clone(),
+            bench_quiet: scores,
+            bench_overlook: vec![0.; tiles],
+            mesh,
+        }
+    }
+
     /// Builds a small eroded terrain and matching knobs for layout property tests.
     ///
     /// Uses lower creek thresholds because the smaller region collects less
@@ -326,9 +352,13 @@ pub(super) mod tests {
 
     #[test]
     fn steps_cost_more_uphill_and_nothing_off_the_board() {
-        let (_, tuning, terrain) = small(3);
-        let costs = terrain.step_costs(&terrain.heights, tuning.aversion);
-        let flat = terrain.step_costs(&vec![0.; terrain.heights.len()], tuning.aversion);
+        let terrain = flat(2, 2, 2);
+        let tuning = HexTerrainTuning::default();
+        let slope: Vec<f32> = terrain.mesh.positions.iter().map(|p| p.x * 0.1).collect();
+        let costs = terrain.step_costs(&slope, tuning.aversion);
+        let flat = terrain.step_costs(&terrain.heights, tuning.aversion);
+        assert!(terrain.mesh.playable_edges.iter().any(|&p| !p));
+        assert!(costs.iter().any(|&cost| cost.is_finite() && cost > 1.));
         for ((cost, flat_cost), &playable) in
             costs.iter().zip(flat).zip(&terrain.mesh.playable_edges)
         {
