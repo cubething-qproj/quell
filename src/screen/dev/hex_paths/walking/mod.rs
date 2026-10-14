@@ -11,7 +11,7 @@
 //! [`Exploration`](data::Exploration) restricts routing and trail drawing to
 //! edges within sight, hides distant landmarks, and remembers cards on
 //! arrival. The Reveal control overrides card images without granting route
-//! knowledge. A camera that follows movement belongs to a subsequent slice.
+//! knowledge. Player camera focus follows the walker's billboard.
 
 use bevy::prelude::*;
 

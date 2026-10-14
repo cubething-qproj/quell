@@ -67,6 +67,13 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 (@FeathersButton { @caption: bsn! { label("Toggle walking") } }
                     on(|_: On<Activate>, mut walking: ResMut<WalkingSettings>| { walking.enabled = !walking.enabled; })),
                 label_small("Walking: hover a path tile to preview its destination, then click. Layout edits end the walk."),
+                (Node { align_items: AlignItems::Center, column_gap: px(8) } Children [
+                    (label_small("Walking speed") Node { width: percent(50) }),
+                    (@FeathersSlider { @min: 0., @max: 250., @value: 0. }
+                        Node { flex_grow: 1. }
+                        SliderStep(5.) SliderPrecision(0) SpeedSlider
+                        on(set_speed)),
+                ]),
                 label_small("Layout (same terrain; regenerate round the focus)"),
                 (Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
                     (@FeathersButton { @caption: bsn! { label("New layout") } } on(relayout(None))),
@@ -185,6 +192,20 @@ fn set_slider(
     }
 }
 
+/// Applies the walking speed slider immediately, including while dragged.
+fn set_speed(
+    change: On<ValueChange<f32>>,
+    mut commands: Commands,
+    mut walking: ResMut<WalkingSettings>,
+) {
+    commands
+        .entity(change.source)
+        .insert(SliderValue(change.value));
+    if walking.speed != change.value {
+        walking.speed = change.value;
+    }
+}
+
 /// Parses the seed editor directly as `u64`, with blank text meaning random.
 ///
 /// Successful edits update [`HexPathsSettings`] immediately when the parsed
@@ -219,15 +240,22 @@ fn set_seed(
 /// Reflects settings edits into the panel without overwriting focused seed text.
 pub(super) fn sync_settings(
     settings: Res<HexPathsSettings>,
+    walking: Res<WalkingSettings>,
     focus: Res<InputFocus>,
     mut commands: Commands,
     sliders: Query<(Entity, Ref<SettingSlider>, &SliderValue)>,
+    speeds: Query<(Entity, Ref<SpeedSlider>, &SliderValue)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
 ) {
     for (entity, field, value) in &sliders {
         let setting = (field.read)(&settings);
         if (settings.is_changed() || field.is_added()) && value.0 != setting {
             commands.entity(entity).insert(SliderValue(setting));
+        }
+    }
+    for (entity, marker, value) in &speeds {
+        if (walking.is_changed() || marker.is_added()) && value.0 != walking.speed {
+            commands.entity(entity).insert(SliderValue(walking.speed));
         }
     }
     for (entity, mut input, marker) in &mut seeds {

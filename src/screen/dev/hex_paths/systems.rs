@@ -15,7 +15,7 @@
 //! Visual height scaling never enters terrain costs, sight tests, or pace.
 
 use super::walking::{
-    data::{Exploration, Walk},
+    data::{Exploration, Walk, WalkingSettings},
     systems::pick_destination,
 };
 use super::{
@@ -358,38 +358,69 @@ pub(super) fn fit_viewport(
     });
 }
 
-/// Repositions the camera when the board, focus, or vertical exaggeration changes.
+/// Repositions the camera when the board, focus, or vertical exaggeration changes,
+/// and follows a moving target otherwise.
 ///
-/// [`Board::focus`] resolves the target in world coordinates. Keeps the
-/// current orientation and resets distance to the configured terrain or
-/// node/player starting distance. The local cache includes exaggeration
-/// because the same focus moves vertically when the displayed scale changes.
+/// [`Board::focus`] resolves the target in world coordinates; Player focus
+/// tracks the [`Walk`] billboard while walking. A re-aim keeps the current
+/// orientation and resets distance to the configured terrain or node/player
+/// starting distance. Between re-aims the camera translates with the target,
+/// keeping the user's orbit and zoom. While following the walker, distance is
+/// fixed at [`WalkingSettings::follow_distance`] and the downward pitch clamped
+/// to [`WalkingSettings::follow_max_pitch`]; this runs after the editor camera
+/// applies orbit input, so the clamp holds within the frame. The local cache
+/// includes exaggeration because the same focus moves vertically when the
+/// displayed scale changes.
 pub(super) fn aim_camera(
     board: If<Res<Board>>,
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
-    mut aimed: Local<Option<(CameraFocus, f32)>>,
+    walking: Res<WalkingSettings>,
+    walker: Option<Single<&Transform, (With<Walk>, Without<HexPathsCamera>)>>,
+    mut aimed: Local<Option<((CameraFocus, f32, bool), Vec3)>>,
     mut camera: Single<&mut Transform, With<HexPathsCamera>>,
 ) {
+    let following = view.focus == CameraFocus::Player && walker.is_some();
+    let target = board.focus(
+        view.focus,
+        appearance.vertical_scale,
+        walker.map(|w| w.translation),
+    );
     // The vertical scale moves the focus, so it re-aims too.
-    let aim = (view.focus, appearance.vertical_scale);
-    if !board.is_changed() && *aimed == Some(aim) {
-        return;
+    let aim = (view.focus, appearance.vertical_scale, following);
+    match *aimed {
+        _ if following => {
+            let max = walking.follow_max_pitch.to_radians();
+            let forward = camera.forward();
+            if -forward.y > max.sin() {
+                let level = forward
+                    .with_y(0.)
+                    .try_normalize()
+                    .unwrap_or_else(|| camera.up().with_y(0.).normalize_or(Vec3::NEG_Z));
+                camera.look_to(level * max.cos() - Vec3::Y * max.sin(), Vec3::Y);
+            }
+            camera.translation = target - camera.forward() * walking.follow_distance;
+        }
+        Some((last, from)) if !board.is_changed() && last == aim => {
+            camera.translation += target - from;
+        }
+        _ => {
+            let distance = match view.focus {
+                CameraFocus::Terrain => view.initial_distance,
+                CameraFocus::Player | CameraFocus::Node(_) => view.player_distance,
+            };
+            camera.translation = target - camera.forward() * distance;
+        }
     }
-    *aimed = Some(aim);
-    let distance = match view.focus {
-        CameraFocus::Terrain => view.initial_distance,
-        CameraFocus::Player | CameraFocus::Node(_) => view.player_distance,
-    };
-    camera.translation =
-        board.focus(view.focus, appearance.vertical_scale) - camera.forward() * distance;
+    *aimed = Some((aim, target));
 }
 
 /// Feeds orbit and zoom input to the board's editor-camera controller.
 ///
 /// Right-drag starts an orbit only within the board viewport and ends on
 /// release. Wheel input can start a zoom there when motion is not already
-/// user-controlled. The anchor comes from [`Board::focus`] at preview scale;
+/// user-controlled. The anchor comes from [`Board::focus`] at preview scale,
+/// following the walking player under Player focus, where zoom is disabled;
 /// zoom motion ends once its smoothed input settles. There is no panning.
 pub(super) fn orbit_camera(
     mouse: Res<ButtonInput<MouseButton>>,
@@ -399,9 +430,11 @@ pub(super) fn orbit_camera(
     window: Single<&Window, With<PrimaryWindow>>,
     board: If<Res<Board>>,
     view: Res<HexPathsView>,
+    walker: Option<Single<&Transform, (With<Walk>, Without<HexPathsCamera>)>>,
     camera: Single<(&Camera, &Transform, &mut EditorCam), With<HexPathsCamera>>,
 ) {
     let (camera, transform, mut controller) = camera.into_inner();
+    let following = view.focus == CameraFocus::Player && walker.is_some();
     if mouse.just_released(MouseButton::Right) {
         controller.end_move();
     }
@@ -413,9 +446,14 @@ pub(super) fn orbit_camera(
     let anchor = transform
         .compute_affine()
         .inverse()
-        .transform_point3(board.focus(view.focus, appearance.vertical_scale))
+        .transform_point3(board.focus(
+            view.focus,
+            appearance.vertical_scale,
+            walker.map(|w| w.translation),
+        ))
         .as_dvec3();
     let zoom = match scroll.unit {
+        _ if following => 0.,
         MouseScrollUnit::Line => scroll.delta.y * appearance.zoom_per_line,
         MouseScrollUnit::Pixel => scroll.delta.y,
     };

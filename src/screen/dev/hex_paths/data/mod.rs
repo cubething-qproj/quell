@@ -398,6 +398,11 @@ pub struct StatsText;
 #[derive(Component, Default, Clone)]
 pub struct SeedInput;
 
+/// Marks the panel slider bound to [`WalkingSettings::speed`](super::walking::data::WalkingSettings::speed).
+/// Unlike [`SettingSlider`], it applies while dragging: speed never regenerates the board.
+#[derive(Component, Default, Clone)]
+pub struct SpeedSlider;
+
 /// Marks the scrollable panel whose width matches the reserved camera area.
 /// [`resize_panel`](super::panel::resize_panel) reads [`HexPathsAppearance::panel_width`].
 #[derive(Component, Default, Clone)]
@@ -457,7 +462,8 @@ pub enum CameraFocus {
     /// The middle of the board, from afar.
     #[default]
     Terrain,
-    /// The current layout's spawn: the player's last regeneration position, or initial spawn.
+    /// The walking player, or else the current layout's spawn: the player's
+    /// last regeneration position, or initial spawn.
     Player,
     /// The node on this tile, from close by.
     Node(usize),

@@ -151,12 +151,15 @@ impl Board {
     /// Resolves a camera focus to a world point with preview height exaggeration.
     ///
     /// Terrain focus uses the board centre and mean playable height; Player uses
-    /// spawn; Node uses its tile's pad. Node tile indices must be valid on this
-    /// board; [`Self::keep_focus`] validates a retained focus before use.
-    pub fn focus(&self, focus: CameraFocus, vertical_scale: f32) -> Vec3 {
+    /// the walking `player`'s position if any, otherwise spawn; Node uses its
+    /// tile's pad. Node tile indices must be valid on this board;
+    /// [`Self::keep_focus`] validates a retained focus before use.
+    pub fn focus(&self, focus: CameraFocus, vertical_scale: f32, player: Option<Vec3>) -> Vec3 {
         match focus {
             CameraFocus::Terrain => world(self.centre.0, self.centre.1 * vertical_scale),
-            CameraFocus::Player => self.pad(self.layout.spawn, vertical_scale),
+            CameraFocus::Player => {
+                player.unwrap_or_else(|| self.pad(self.layout.spawn, vertical_scale))
+            }
             CameraFocus::Node(tile) => self.pad(tile, vertical_scale),
         }
     }

@@ -29,6 +29,10 @@ pub struct WalkingSettings {
     pub speed: f32,
     /// Horizontal sight radius in edge lengths; only visible edges can be routed over.
     pub sight_radius: f32,
+    /// Fixed camera distance while Player focus follows the walker; zoom is disabled.
+    pub follow_distance: f32,
+    /// Steepest downward camera pitch while following, in degrees below the horizon.
+    pub follow_max_pitch: f32,
     /// Outline and destination colour for a reachable tile under the pointer.
     pub hover_colour: Color,
     /// Radius of the destination marker, in edge lengths.
@@ -41,6 +45,8 @@ impl Default for WalkingSettings {
             enabled: false,
             speed: 100.,
             sight_radius: 3.,
+            follow_distance: 6.,
+            follow_max_pitch: 60.,
             hover_colour: Color::srgb(1., 0.85, 0.15),
             target_radius: 0.15,
         }
