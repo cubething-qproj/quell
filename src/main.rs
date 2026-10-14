@@ -1,3 +1,6 @@
+//! The Quell binary: builds the [`App`] around [`AppPlugin`](quell::AppPlugin) and the
+//! Jackdaw runtime.
+
 use bevy::image::{ImageAddressMode, ImageSamplerDescriptor};
 #[cfg(not(feature = "dev"))]
 use quell::AppSettings;

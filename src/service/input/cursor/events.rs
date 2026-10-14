@@ -1,9 +1,14 @@
+//! Capturing and releasing the cursor, and keeping input contexts in step
+//! with which camera is active.
+
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 
 use crate::prelude::*;
 #[cfg(feature = "dev")]
 use q_cam::free::FreeCameraInput;
 
+/// Locks the cursor and enables the tracking camera's input, if the window is
+/// focused, the context is armed, and the tracking camera is active.
 fn on_capture_cursor(
     trigger: On<Complete<PACaptureCursor>>,
     mut window: Single<(&Window, &mut CursorOptions), With<PrimaryWindow>>,
@@ -27,10 +32,12 @@ fn on_capture_cursor(
             .insert(ContextActivity::<SpringArm>::ACTIVE);
     }
 }
+/// Turns the release action into a [`ReleaseCursor`] event.
 fn on_release_cursor(_: On<Complete<PAReleaseCursor>>, mut commands: Commands) {
     commands.trigger(ReleaseCursor);
 }
 
+/// Frees the cursor, disarms capture, and disables camera input when `E` fires.
 fn release_cursor<E: Event>(
     _: On<E>,
     mut cursor: Single<&mut CursorOptions, With<PrimaryWindow>>,
@@ -57,6 +64,7 @@ fn release_cursor<E: Event>(
     }
 }
 
+/// Spawns the capture context with its click and Escape bindings.
 fn spawn_cursor_capture(_trigger: On<SpawnCursorCapture>, mut commands: Commands) {
     debug!("spawn_capture_cursor_actions");
     commands.spawn((
@@ -86,6 +94,11 @@ fn spawn_cursor_capture(_trigger: On<SpawnCursorCapture>, mut commands: Commands
     ));
 }
 
+/// Keeps input contexts in step with focus, capture, and which camera is active.
+///
+/// Arms capture only after the mouse is fully released. Enables camera input
+/// only while captured, and player input only while the tracking camera is
+/// selected. Clears player movement whenever its input is disabled.
 fn sync_contexts(
     window: Single<(&Window, &CursorOptions), With<PrimaryWindow>>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -137,6 +150,7 @@ fn sync_contexts(
     }
 }
 
+/// Releases the cursor if the active tracking camera is removed.
 fn on_remove_tracking(
     event: On<Remove, SpringArm>,
     cameras: Query<&Camera>,
@@ -150,6 +164,8 @@ fn on_remove_tracking(
     }
 }
 
+/// Clears smoothed input history when context `C` is deactivated, so it
+/// doesn't resume a stale value when reactivated.
 fn reset_smoothing<C: Component>(
     event: On<Insert, ContextActivity<C>>,
     contexts: Query<(&ContextActivity<C>, &Actions<C>)>,
@@ -170,6 +186,7 @@ fn reset_smoothing<C: Component>(
     }
 }
 
+/// Registers the capture and release observers and the context sync.
 pub fn plugin(app: &mut App) {
     app.add_observer(on_capture_cursor)
         .add_observer(on_release_cursor)

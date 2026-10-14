@@ -1,3 +1,9 @@
+//! Camera input: the tracking camera, plus the free camera in `dev` builds.
+//!
+//! Tracking uses [`SpringArm`] from q_cam; the dev free camera uses Bevy's
+//! controller with q_cam's input gating. Bundles configure render layers and
+//! input bindings, while the cursor service controls capture and activation.
+
 use crate::prelude::*;
 #[cfg(feature = "dev")]
 use q_cam::free::FreeCameraInputPlugin;
@@ -7,6 +13,7 @@ mod data;
 mod fly;
 mod tracking;
 
+/// Camera bundles, render layers, camera order, and q_cam re-exports.
 pub mod prelude {
 
     pub use super::data::*;
@@ -21,6 +28,8 @@ pub mod prelude {
     };
 }
 
+/// Installs tracking input and spring-arm collision against [`CollisionLayer::Default`],
+/// excluding the player. Also installs free-camera input in `dev` builds.
 pub fn plugin(app: &mut App) {
     app.insert_resource(SpringArmCollisionFilter {
         included: CollisionLayer::Default.into(),

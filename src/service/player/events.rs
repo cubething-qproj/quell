@@ -1,8 +1,11 @@
+//! Observers for spawning the player and reading its input.
+
 use bevy::ecs::{lifecycle::HookContext, world::DeferredWorld};
 use bevy::window::PrimaryWindow;
 
 use crate::prelude::*;
 
+/// Spawns a screen-scoped player resting on the given transform.
 fn spawn_player_root(
     trigger: On<SpawnPlayerRoot>,
     mut commands: Commands,
@@ -61,6 +64,8 @@ pub(super) fn on_add_player_controller(mut world: DeferredWorld, ctx: HookContex
     ));
 }
 
+/// Records move input, but only while the tracking camera is active and the
+/// window is focused.
 fn on_move(
     trigger: On<Fire<PAMove>>,
     settings: Res<PlayerSettings>,
@@ -71,9 +76,11 @@ fn on_move(
     controller.last_move =
         (camera.is_active && window.focused).then_some(trigger.value * settings.default_speed);
 }
+/// Unlocks facing while there is raw move input.
 fn on_input(_trigger: On<Fire<PARawMoveInput>>, mut controller: Single<&mut PlayerController>) {
     controller.rotation_locked = false;
 }
+/// Locks facing once raw move input stops, so smoothing doesn't turn the player.
 fn on_input_complete(
     _trigger: On<Complete<PARawMoveInput>>,
     mut controller: Single<&mut PlayerController>,
@@ -81,6 +88,7 @@ fn on_input_complete(
     controller.rotation_locked = true;
 }
 
+/// Spawns a player at a level's [`PlayerSpawn`], unless one already exists.
 fn on_player_spawn(
     trigger: On<Insert, PlayerSpawn>,
     spawns: Query<&GlobalTransform>,
@@ -99,6 +107,7 @@ fn on_player_spawn(
     });
 }
 
+/// Registers the spawn and input observers.
 pub fn plugin(app: &mut App) {
     app.add_observer(on_move)
         .add_observer(on_input)

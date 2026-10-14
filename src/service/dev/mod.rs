@@ -1,3 +1,5 @@
+//! Dev-only tooling: the egui world inspector.
+
 use bevy_inspector_egui::{
     bevy_egui::{EguiGlobalSettings, EguiPlugin, EguiPreUpdateSet},
     quick::WorldInspectorPlugin,
@@ -5,15 +7,8 @@ use bevy_inspector_egui::{
 
 use crate::prelude::*;
 
-// mod console;
-// mod gizmos;
-
-pub mod prelude {
-    // pub use super::gizmos::prelude::*;
-}
-
+/// Adds the world inspector and orders input so egui absorbs the input it uses.
 pub fn plugin(app: &mut App) {
-    // app.add_plugins((gizmos::plugin, console::plugin));
     // Egui clears mouse/keyboard input it's using, so clicks and typing in the
     // inspector don't reach gameplay (e.g. cursor capture). Enhanced input must
     // read after that.

@@ -1,3 +1,5 @@
+//! Player movement against real physics: walking into walls and on slopes.
+
 use std::{f32::consts::FRAC_PI_2, time::Duration};
 
 use bevy::time::TimeUpdateStrategy;

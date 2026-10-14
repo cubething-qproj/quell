@@ -1,6 +1,9 @@
+//! The free-camera bundle.
+
 use crate::prelude::*;
 use q_cam::free::FreeCameraInput;
 
+/// A free camera, with input disabled until the cursor is captured.
 pub fn flycam_bundle() -> impl Bundle {
     let mut state = FreeCameraState::default();
     state.enabled = false;

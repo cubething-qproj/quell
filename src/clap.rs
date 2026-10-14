@@ -1,12 +1,16 @@
+//! Command-line arguments for `dev` builds, parsed into [`AppSettings`].
+
 use std::process::exit;
 
 use clap::Parser;
 use quell::{AppSettings, prelude::*};
 
+/// Build metadata written by `build.rs`.
 mod built_info {
     include!(concat!(env!("OUT_DIR"), "/built.rs"));
 }
 
+/// The `dev` command line. Run the binary with `--help` for usage.
 #[derive(Parser, Debug)]
 struct Cli {
     /// Name of the screen to start on
@@ -23,6 +27,9 @@ struct Cli {
     _jackdaw_extract_schema: bool,
 }
 
+/// Parses the command line into [`AppSettings`].
+///
+/// Exits the process after printing when `--build-info` is passed.
 pub fn parse_args() -> AppSettings {
     let args = Cli::parse();
 

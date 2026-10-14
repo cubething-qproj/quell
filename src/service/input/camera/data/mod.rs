@@ -1,3 +1,5 @@
+//! Render layers, camera order, and camera input actions.
+
 use crate::prelude::*;
 use bitflags::bitflags;
 
@@ -5,6 +7,7 @@ mod input_ctx;
 pub use input_ctx::*;
 
 bitflags! {
+    /// Named render layers. Converts into [`RenderLayers`].
     pub struct RenderLayer: u32 {
         /// Used implicitly by all entities without a `RenderLayers` component.
         /// Light source should be on DEFAULT _and_ PLAYER
@@ -27,11 +30,14 @@ impl From<RenderLayer> for RenderLayers {
     }
 }
 
-/// Note: Value increases from top to bottom with highest value drawn last, thus
-/// on top of the others
+/// Camera rendering order: later variants draw after earlier ones.
+/// This controls compositing order; [`RenderLayer`] selects which entities a camera sees.
 #[derive(Debug)]
 pub enum CameraOrder {
+    /// World cameras.
     World,
+    /// The first-person view.
     Player,
+    /// UI, drawn over everything.
     Ui,
 }

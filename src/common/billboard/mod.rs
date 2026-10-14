@@ -1,8 +1,7 @@
-//! Shared billboard data and screen-scheduled camera facing.
+//! Camera-facing orientation for [`Billboard`](data::Billboard) quads.
 //!
-//! [`Billboard`](data::Billboard) marks quads; [`face_camera`](systems::face_camera)
-//! copies the rotation of a camera selected by its marker type. Screens own
-//! creation and scheduling, so this module installs no global update system.
+//! [`face_camera`](systems::face_camera) applies the selected camera's rotation;
+//! the marker's docs describe how to use it in a screen.
 
 mod data;
 mod systems;

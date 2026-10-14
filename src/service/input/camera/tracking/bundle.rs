@@ -1,5 +1,9 @@
+//! The tracking-camera bundle.
+
 use crate::prelude::*;
 
+/// A spring-arm camera following `target`, with mouse and right-stick orbit
+/// and mouse-wheel zoom. Input starts inactive until the cursor is captured.
 pub fn tracking_cam_bundle(target: Entity) -> impl Bundle {
     (
         SpringArm::new(target),

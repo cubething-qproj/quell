@@ -41,6 +41,8 @@ fn steep_slope_velocity(v: Vec3, normal: Vec3) -> Vec3 {
         + (Vec3::Y * v.y.min(0.)).reject_from_normalized(normal)
 }
 
+/// Consumes [`PlayerMotor`] intent and resolves capsule motion with move-and-slide,
+/// applying gravity, ground snapping, and the slope rules described in this module.
 fn move_player(
     mut players: Query<(
         Entity,
@@ -113,6 +115,7 @@ fn move_player(
     }
 }
 
+/// Runs player movement in `FixedUpdate`.
 pub fn plugin(app: &mut App) {
     app.add_systems(FixedUpdate, move_player.in_set(PlayerSystems));
 }

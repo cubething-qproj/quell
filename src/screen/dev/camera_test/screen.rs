@@ -1,16 +1,21 @@
+//! The camera sandbox screen: a target circling a lit floor, and both cameras.
+
 use crate::prelude::*;
 use bevy::window::PrimaryWindow;
 
+/// Help text shown while the free camera is active.
 const FREE_HELP: &str = "Camera: Free | Tab switch camera\n\
     RMB hold / M toggle capture\n\
     Esc release (again to quit)\n\
     WASD move | Q/E down/up\n\
     Shift faster | Wheel speed";
+/// Help text shown while the tracking camera is active.
 const TRACKING_HELP: &str = "Camera: Tracking | Tab switch camera\n\
     Left click capture\n\
     Mouse / right stick orbit | Wheel FOV zoom\n\
     Esc release (again to quit)";
 
+/// Free and tracking cameras over a moving target. Tab switches between them.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub struct CameraTestScreen;
 impl Screen for CameraTestScreen {
@@ -24,9 +29,7 @@ impl Screen for CameraTestScreen {
     }
 }
 
-/// spawn the scene.
-/// this is temp, ideally load the scene from file
-/// then spawn it
+/// Builds the moving target, floor, obstacle, cameras, and help text, then finishes loading.
 fn init(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
@@ -97,6 +100,8 @@ fn init(
     screen.finish_loading();
 }
 
+/// Toggles which camera is active and releases the cursor, so the newly active
+/// camera needs a fresh capture gesture. Ignored while the window is unfocused.
 pub(super) fn switch_camera(
     _: On<Start<PASwitchCamera>>,
     window: Single<&Window, With<PrimaryWindow>>,
@@ -114,6 +119,7 @@ pub(super) fn switch_camera(
     commands.trigger(ReleaseCursor);
 }
 
+/// Shows the help text for the active camera.
 fn update_help(
     mut help: Single<&mut Text, With<CameraTestHelp>>,
     free: Single<&Camera, (With<FreeCamera>, Without<SpringArm>)>,
@@ -131,6 +137,7 @@ fn update_help(
     }
 }
 
+/// Moves the [`Cube`] in a circle, giving the tracking camera something to follow.
 fn update(mut query: Query<&mut Transform, With<Cube>>, time: Res<Time>) {
     let mut tf = r!(query.single_mut());
     *tf = tf.with_translation(Vec3::new(

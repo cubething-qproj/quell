@@ -3,13 +3,12 @@
 use super::data::Billboard;
 use crate::prelude::*;
 
-/// Turns every [`Billboard`] toward the single camera marked by `C`.
+/// Copies the local rotation of the entity marked by `C` to every [`Billboard`].
 ///
-/// The caller schedules this within the relevant screen, selecting that
-/// screen's active camera marker. It skips when no unique camera matches,
-/// and excludes billboards from the camera query to keep transform access
-/// disjoint. A future `BillboardTarget` relationship could support distinct
-/// targets per billboard when multiple cameras must coexist.
+/// Requires exactly one matching entity with a [`Transform`] and without
+/// [`Billboard`]; otherwise the system skips. `C` chooses the camera, without
+/// testing [`Camera::is_active`]. Billboards are not filtered by screen, and must
+/// use a coordinate frame compatible with the camera's local rotation.
 pub fn face_camera<C: Component>(
     camera: Single<&Transform, (With<C>, Without<Billboard>)>,
     mut billboards: Query<&mut Transform, With<Billboard>>,

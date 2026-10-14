@@ -1,11 +1,10 @@
-//! Reusable components and systems shared between game screens.
+//! Components and mechanics shared by screens and services.
 //!
-//! [`billboard`](crate::common::billboard) provides camera-facing quads while screens retain entity
-//! ownership, asset selection, and schedule placement.
+//! Callers choose the entity lifetimes and schedules for these reusable pieces.
 
 pub mod billboard;
 
-/// Shared components and utilities available through the crate prelude.
+/// Common components and systems available through the crate prelude.
 pub mod prelude {
     pub use super::billboard::prelude::*;
 }

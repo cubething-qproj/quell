@@ -1,17 +1,21 @@
+//! The application plugin and its launch settings.
+
 use crate::prelude::*;
 
-/// Allows for configuration of the application. When the "dev" feature is set,
-/// this should be handled via command line arguments. Otherwise, it is kept as the
-/// default value.
+/// Launch settings passed to [`AppPlugin`].
+///
+/// The binary reads these from command-line arguments in `dev` builds and
+/// uses their defaults otherwise.
 #[derive(Resource, Clone, Debug, Default, Reflect)]
 pub struct AppSettings {
     /// Registered screen name to start on. `None` starts on [`SplashScreen`].
     pub initial_screen: Option<String>,
 }
 
-/// The main exported plugin for the application.
+/// Registers screens and services, then selects the initial screen from [`AppSettings`].
 #[derive(Default, Clone)]
 pub struct AppPlugin {
+    /// Inserted as a resource and used to pick the initial screen.
     pub settings: AppSettings,
 }
 impl Plugin for AppPlugin {
@@ -23,6 +27,7 @@ impl Plugin for AppPlugin {
 }
 
 impl AppSettings {
+    /// Selects [`SplashScreen`] when no name is given; otherwise requests the named screen.
     fn initial_screen(&self) -> InitialScreen {
         self.initial_screen
             .clone()

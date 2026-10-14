@@ -1,7 +1,11 @@
+//! Player components, settings, input actions, and assets.
+
 use crate::prelude::*;
 use jackdaw_runtime::EditorPreview;
 use std::f32::consts::FRAC_PI_4;
 
+/// Body dimensions and movement tuning used by [`PlayerController`] setup and
+/// the fixed-step motor. Field docs distinguish spawn-time values from live settings.
 #[derive(Resource, Reflect, Debug)]
 #[reflect(Resource)]
 pub struct PlayerSettings {
@@ -9,8 +13,10 @@ pub struct PlayerSettings {
     /// total height is `capsule_height + 2 * capsule_radius`.
     /// Applied when spawning the player, not to an existing collider.
     pub capsule_height: f32,
+    /// Radius of the capsule and its rounded caps.
     /// Applied when spawning the player, not to an existing collider.
     pub capsule_radius: f32,
+    /// Walking speed, in m/s. Applies to an existing player.
     pub default_speed: f32,
     /// Steepest walkable surface, in radians from horizontal.
     pub max_slope: f32,
@@ -45,12 +51,14 @@ impl PlayerSettings {
     }
 }
 
+/// The fixed-step player movement systems.
 #[derive(SystemSet, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct PlayerSystems;
 
 /// Spawns the player with its base resting at `transform`.
 #[derive(Event, Reflect, Copy, Clone, Debug, Default)]
 pub struct SpawnPlayerRoot {
+    /// Where the base of the player's capsule rests.
     pub transform: Transform,
 }
 
@@ -60,6 +68,11 @@ pub struct SpawnPlayerRoot {
 #[reflect(Component, Default, @EditorPreview::gltf("models/basil.glb"))]
 pub struct PlayerSpawn;
 
+/// Connects player input and presentation to [`PlayerMotor`] movement.
+///
+/// Add after [`PlayerAssets`] and [`PlayerSettings`] are available. Its setup
+/// hook installs the model, collider, bindings, and a camera linked through
+/// [`PlayerCameraOf`]. Required components supply the motor and input context.
 #[derive(Component, Reflect, Default)]
 #[reflect(Component, Default)]
 #[require(
@@ -71,38 +84,44 @@ pub struct PlayerSpawn;
 )]
 #[component(on_add = super::events::on_add_player_controller)]
 pub struct PlayerController {
+    /// Smoothed camera-local input scaled to speed. [`player_systems`] consumes
+    /// it and rotates it into world-space motor intent; `None` means no input.
     pub last_move: Option<Vec3>,
-    /// Lock y-rotation to prevent player rotation once input has stopped
+    /// Keeps facing fixed after raw input stops, while smoothed motion settles.
     pub rotation_locked: bool,
 }
 
-/// The camera following a player; despawned with it.
+/// Links a camera entity to its player and the player's lifetime.
+/// [`PlayerCameras`] records the inverse relationship.
 #[derive(Component)]
 #[relationship(relationship_target = PlayerCameras)]
 pub struct PlayerCameraOf(pub Entity);
 
+/// Camera entities linked by [`PlayerCameraOf`], removed when the player despawns.
 #[derive(Component)]
 #[relationship_target(relationship = PlayerCameraOf, linked_spawn)]
 pub struct PlayerCameras(Vec<Entity>);
 
-/// Default player input context
+/// Default player input context.
 #[derive(Component, Default)]
 pub struct ICtxDefault;
 
-/// PlayerAction_Move
+/// Smoothed movement input.
 #[derive(InputAction, Reflect)]
 #[action_output(Vec3)]
 pub struct PAMove;
 
-/// PlayerAction_RawMoveInput
-/// Used WITHOUT SMOOTHING to determine exactly when keys are pressed and released.
+/// Unsmoothed movement input used to unlock facing while held and lock it on completion.
+/// This separates facing changes from the residual velocity in [`PAMove`].
 #[derive(InputAction, Reflect)]
 #[action_output(Vec3)]
 pub struct PARawMoveInput;
 
+/// Assets the player needs before it can spawn.
 #[derive(AssetCollection, Resource, Default, Debug)]
 pub struct PlayerAssets {
     // Keep `PlayerSpawn`'s editor preview in sync with this path.
+    /// The player model.
     #[asset(path = "models/basil.glb#Scene0")]
     pub model: Handle<WorldAsset>,
 }
@@ -125,17 +144,18 @@ pub struct PlayerMotor {
     pub desired_forward: Option<Dir3>,
 }
 impl PlayerMotor {
+    /// A motor with no movement intent.
     pub fn new() -> Self {
         Self::default()
     }
-    /// Sets desired_velocity, builder-style
+    /// Sets the desired world-space velocity and returns the motor.
     pub fn with_vel(self, desired_velocity: Vec3) -> Self {
         Self {
             desired_velocity,
             ..self
         }
     }
-    /// Sets desired_forward, builder-style
+    /// Sets the desired facing and returns the motor.
     pub fn with_forward(self, desired_forward: Option<Dir3>) -> Self {
         Self {
             desired_forward,

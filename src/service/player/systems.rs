@@ -1,6 +1,10 @@
+//! The player's per-frame systems, run by screens.
+
 use crate::prelude::*;
 use bevy::window::PrimaryWindow;
 
+/// Turns move input into [`PlayerMotor`] intent relative to the camera's yaw.
+/// Clears intent while the tracking camera is inactive or the window unfocused.
 fn update_controller(
     mut query: Single<(&mut PlayerMotor, &mut PlayerController)>,
     camera: Single<(&Camera, &Transform), With<SpringArm>>,
@@ -28,6 +32,7 @@ fn update_controller(
     motor.desired_velocity = desired_velocity;
 }
 
+/// The player systems for a screen to run in its `Update`.
 pub fn systems() -> ServiceSystems {
     ServiceSystems::new(update_controller)
 }

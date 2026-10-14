@@ -1,8 +1,14 @@
+//! World entry: wait for player assets, load the level scene, then run player input.
+//!
+//! The level's [`PlayerSpawn`] requests the player through its insertion observer.
+//! The scene itself starts loading in `OnReady`; it is not part of the asset gate.
+
 use bevy::asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState};
 use jackdaw_runtime::JackdawSceneRoot;
 
 use crate::prelude::*;
 
+/// The main game screen. Loads the level scene and runs the player services.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub struct WorldScreen;
 impl Screen for WorldScreen {
@@ -14,6 +20,8 @@ impl Screen for WorldScreen {
     }
 }
 
+/// Finishes loading once the player model and its dependencies have loaded.
+/// Exits the app if any of them fail.
 fn load_world(
     mut screen: ScreenInfoMut<WorldScreen>,
     server: Res<AssetServer>,
@@ -41,6 +49,8 @@ fn load_world(
     }
 }
 
+/// Spawns the level, input contexts, and cursor capture. In `dev` builds,
+/// also spawns an inactive free camera that Tab swaps in.
 fn init(mut commands: Commands, server: Res<AssetServer>) {
     debug!("in world: init");
     // The level's `PlayerSpawn` spawns the player.
@@ -48,7 +58,6 @@ fn init(mut commands: Commands, server: Res<AssetServer>) {
         JackdawSceneRoot(server.load("scenes/greybox_scene.bsn")),
         ScreenScoped,
     ));
-    // commands.trigger(SpawnWorldgenRoot);
     commands.trigger(SpawnGlobalCtx);
     commands.trigger(SpawnCursorCapture);
     #[cfg(feature = "dev")]
@@ -66,6 +75,7 @@ fn init(mut commands: Commands, server: Res<AssetServer>) {
     }
 }
 
+/// Loads [`PlayerAssets`] and registers [`WorldScreen`].
 pub fn plugin(app: &mut App) {
     app.init_collection::<PlayerAssets>();
     app.register_screen::<WorldScreen>();

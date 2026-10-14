@@ -1,28 +1,28 @@
-//! # tfw-app template
+//! # Quell
 //!
-//! This crate is split into three modules: the [screen] module for the creation
-//! of screens, the [service] module for the creation of services, and the
-//! [framework] module for the underlying implementation.
+//! [`screen`] composes game features, [`service`] provides their behaviour,
+//! and [`common`] holds reusable components and supporting mechanics.
+//! [`AppPlugin`] wires them together.
 //!
-//! For general information on how to use this template, see
-//! the [docs] module.
+//! For the ownership rules and development workflow, see [`docs`].
 
-// /// Information about the general architecture and patterns used in this
-// /// template.
-// #[cfg(doc)]
-// pub mod docs;
+/// Architecture, scheduling, development, and testing guides.
+#[cfg(doc)]
+#[path = "../docs/mod.rs"]
+pub mod docs;
 
-/// See [framework::screen]
+/// Screen definitions and registration.
 pub mod screen;
 
-/// Reusable screen-independent components and systems.
+/// Components and mechanics shared by features.
 pub mod common;
-/// See [docs::architecture#modules]
+/// Game services and their registration.
 pub mod service;
 
 mod plugin;
 pub use plugin::{AppPlugin, AppSettings};
 
+/// Everything most modules need: the module preludes plus q_screens.
 pub mod prelude {
     pub use super::common::prelude::*;
     pub use super::screen::prelude::*;

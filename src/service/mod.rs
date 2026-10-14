@@ -1,3 +1,9 @@
+//! Game-service registration and the APIs screens use to compose behaviour.
+//!
+//! Plugins install shared data, observers, and component-driven global updates;
+//! screens schedule the additional systems exposed through
+//! [`ServiceSystems`](crate::prelude::ServiceSystems).
+
 use crate::prelude::*;
 
 mod data;
@@ -11,27 +17,19 @@ pub mod player;
 mod third_party;
 mod ui;
 mod util;
-mod worldgen;
 
+/// Every service's public types, plus the external-crate re-exports.
 pub mod prelude {
     pub use super::data::*;
-    #[cfg(feature = "dev")]
-    pub use super::dev::prelude::*;
     pub use super::input::prelude::*;
     pub use super::player::prelude::*;
     pub use super::third_party::prelude::*;
     pub use super::util::*;
-    pub use super::worldgen::prelude::*;
 }
 
+/// Adds every service, plus dev tooling in `dev` builds.
 pub fn plugin(app: &mut App) {
-    app.add_plugins((
-        third_party::plugin,
-        input::plugin,
-        ui::plugin,
-        worldgen::plugin,
-        player::plugin,
-    ));
+    app.add_plugins((third_party::plugin, input::plugin, ui::plugin, player::plugin));
     #[cfg(feature = "dev")]
     app.add_plugins(dev::plugin);
 }

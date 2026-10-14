@@ -1,3 +1,5 @@
+//! The greybox arena screen: the arena scene, the player, and a free camera.
+
 use bevy::asset::{DependencyLoadState, LoadState, RecursiveDependencyLoadState};
 use jackdaw_runtime::{JackdawScene, JackdawSceneRoot};
 
@@ -6,6 +8,7 @@ use crate::prelude::*;
 /// The Jackdaw-authored greybox arena.
 const SCENE: &str = "scenes/greybox_scene.bsn";
 
+/// Runs the player in the greybox arena. Tab swaps in the free camera.
 #[derive(Component, Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Reflect)]
 pub struct GreyboxArenaScreen;
 impl Screen for GreyboxArenaScreen {
@@ -45,6 +48,7 @@ fn load_arena(
     }
 }
 
+/// Spawns the arena, input contexts, cursor capture, and an inactive free camera.
 fn init(mut commands: Commands, server: Res<AssetServer>) {
     debug!("in greybox_arena: init");
     // The level's `PlayerSpawn` spawns the player.

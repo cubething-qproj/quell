@@ -1,8 +1,12 @@
+//! Applying orbit and zoom input to the tracking camera.
+
 use std::f32::consts::{FRAC_PI_2, FRAC_PI_8, PI};
 
 use crate::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 
+/// Whether a camera should still take input: active, enabled, and holding a
+/// captured cursor in a focused window.
 fn input_enabled(
     camera: &Camera,
     activity: &ContextActivity<SpringArm>,
@@ -16,6 +20,7 @@ fn input_enabled(
         })
 }
 
+/// Orbits the camera, clamping pitch.
 fn on_rotate(
     trigger: On<Fire<PARotateCam>>,
     mut cameras: Query<(&Camera, &ContextActivity<SpringArm>, &mut Transform), With<SpringArm>>,
@@ -33,6 +38,7 @@ fn on_rotate(
     transform.rotation = Quat::from_euler(EulerRot::YXZ, yaw, pitch, 0.);
 }
 
+/// Zooms by changing field of view, clamped between π/8 and π/2.
 fn on_zoom(
     trigger: On<Fire<PAZoomCam>>,
     settings: Res<SpringArmCameraSettings>,
@@ -51,6 +57,7 @@ fn on_zoom(
     }
 }
 
+/// Registers the orbit and zoom observers.
 pub fn plugin(app: &mut App) {
     app.add_observer(on_rotate).add_observer(on_zoom);
 }

@@ -1,6 +1,10 @@
+//! Observers for the global input context.
+
 use crate::prelude::*;
 use bevy::window::{CursorGrabMode, CursorOptions, PrimaryWindow};
 
+/// Exits on completion of [`PAQuit`] when the cursor is free.
+/// Ignores the event while captured; [`PAReleaseCursor`] handles that case.
 fn exit_app(
     _: On<Complete<PAQuit>>,
     mut commands: Commands,
@@ -12,6 +16,7 @@ fn exit_app(
     }
 }
 
+/// Spawns the global context with its Escape-to-quit binding.
 fn spawn_global_ctx(_: On<SpawnGlobalCtx>, mut commands: Commands) {
     commands.spawn((
         ICtxGlobal,
@@ -32,6 +37,7 @@ fn spawn_global_ctx(_: On<SpawnGlobalCtx>, mut commands: Commands) {
     ));
 }
 
+/// Registers the quit and spawn observers.
 pub fn plugin(app: &mut App) {
     app.add_observer(exit_app);
     app.add_observer(spawn_global_ctx);
