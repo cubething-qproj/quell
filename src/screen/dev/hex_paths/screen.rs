@@ -30,15 +30,12 @@ pub struct HexPathsScreen;
 
 impl Screen for HexPathsScreen {
     fn builder(mut builder: ScreenScopeBuilder<Self>) -> ScreenScopeBuilder<Self> {
-        builder.add_systems(ScreenSchedule::Loading, init);
+        builder.add_systems(ScreenSchedule::OnLoad, (init_collection, init).chain());
         builder.add_systems(ScreenSchedule::OnReady, request_board);
         builder.add_systems(
             ScreenSchedule::Update,
             (
-                systems::spawn_board.run_if(
-                    resource_changed::<HexPathsSettings>
-                        .or_else(resource_changed::<HexTerrainTuning>),
-                ),
+                systems::spawn_board.run_if(HexSettingsCollection::changed),
                 systems::refresh_preview.run_if(
                     resource_exists_and_changed::<Board>
                         .or_else(resource_changed::<HexPathsView>)
@@ -63,6 +60,10 @@ impl Screen for HexPathsScreen {
     fn name() -> String {
         "hex_paths".into()
     }
+}
+
+fn init_collection(world: &mut World) {
+    world.init_collection::<HexSettingsCollection>();
 }
 
 /// Creates preview assets and UI, then finishes the screen's loading phase.
@@ -139,7 +140,7 @@ fn init(
 }
 
 /// Requests a board on each screen entry; Update is the sole generation path.
-fn request_board(mut settings: ResMut<HexPathsSettings>) {
+fn request_board(mut settings: ResMut<HexSettingsCollection>) {
     settings.set_changed();
 }
 

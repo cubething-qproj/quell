@@ -2,9 +2,92 @@
 //!
 //! [`HexPathsSettings`] supplies primary generation knobs; [`HexTerrainTuning`]
 //! supplies algorithm controls including [`WindowWeights`]. The screen detects
-//! changes to these resources and rebuilds the board, reusing cached erosion.
+//! changes to these assets and rebuilds the board, reusing cached erosion.
+
+use bevy::{asset::AssetMut, ecs::system::SystemParam};
+use serde::Deserialize;
 
 use crate::prelude::*;
+
+/// Handles to the RON-authored [`HexPathsSettings`] and [`HexTerrainTuning`].
+///
+/// Loaded by `bevy_asset_loader` when the data plugin is built. Systems read
+/// the assets through [`HexSettings`] or [`HexSettingsMut`]; marking this
+/// resource changed requests a full board rebuild, as does [`Self::changed`].
+#[derive(Default, AssetCollection, Resource, Reflect, Debug, Clone, PartialEq)]
+pub struct HexSettingsCollection {
+    #[asset(path = "terrain/hex.paths.ron")]
+    pub paths: Handle<HexPathsSettings>,
+    #[asset(path = "terrain/hex.tuning.ron")]
+    pub terrain: Handle<HexTerrainTuning>,
+}
+
+impl HexSettingsCollection {
+    /// Run condition for full board generation.
+    ///
+    /// True when either settings asset was added (loaded) or modified (hot
+    /// reload, panel edit), or when this resource was marked changed (screen
+    /// entry, the Regenerate button). Both readers are drained every run.
+    pub fn changed(
+        collection: Res<Self>,
+        mut paths: MessageReader<AssetEvent<HexPathsSettings>>,
+        mut terrain: MessageReader<AssetEvent<HexTerrainTuning>>,
+    ) -> bool {
+        let (p, t) = (&collection.paths, &collection.terrain);
+        let paths = paths.read().filter(|e| e.is_added(p) || e.is_modified(p));
+        let terrain = terrain.read().filter(|e| e.is_added(t) || e.is_modified(t));
+        let edits = paths.count() + terrain.count();
+        collection.is_changed() || edits > 0
+    }
+}
+
+/// Read access to the loaded settings assets named by [`HexSettingsCollection`].
+///
+/// Accessors return `None` until loading finishes; systems should bail rather
+/// than panic. Pure generation code takes the plain references from [`Self::get`].
+#[derive(SystemParam)]
+pub struct HexSettings<'w> {
+    collection: Res<'w, HexSettingsCollection>,
+    paths: Res<'w, Assets<HexPathsSettings>>,
+    terrain: Res<'w, Assets<HexTerrainTuning>>,
+}
+
+impl<'w> HexSettings<'w> {
+    /// Both settings assets, once both are loaded.
+    pub fn get(&self) -> Option<(&HexPathsSettings, &HexTerrainTuning)> {
+        self.paths().zip(self.terrain())
+    }
+    /// The primary generation knobs, once loaded.
+    pub fn paths(&self) -> Option<&HexPathsSettings> {
+        self.paths.get(self.collection.paths.id())
+    }
+    /// The algorithm tuning, once loaded.
+    pub fn terrain(&self) -> Option<&HexTerrainTuning> {
+        self.terrain.get(self.collection.terrain.id())
+    }
+    /// The handle collection, e.g. for change detection.
+    pub fn collection(&self) -> &Res<'w, HexSettingsCollection> {
+        &self.collection
+    }
+}
+
+/// Write access to the [`HexPathsSettings`] asset named by [`HexSettingsCollection`].
+///
+/// Mutating through [`AssetMut`] emits [`AssetEvent::Modified`], which
+/// [`HexSettingsCollection::changed`] turns into a board rebuild. Tuning is
+/// not panel-editable; edit its RON file and rely on hot reload instead.
+#[derive(SystemParam)]
+pub struct HexSettingsMut<'w> {
+    collection: Res<'w, HexSettingsCollection>,
+    paths: ResMut<'w, Assets<HexPathsSettings>>,
+}
+
+impl HexSettingsMut<'_> {
+    /// Mutable primary knobs, once loaded; only dereferencing mutably marks them modified.
+    pub fn paths_mut(&mut self) -> Option<AssetMut<'_, HexPathsSettings>> {
+        self.paths.get_mut(self.collection.paths.id())
+    }
+}
 
 /// Primary generation knobs shared by the panel, terrain, and layout stages.
 ///
@@ -13,8 +96,7 @@ use crate::prelude::*;
 /// changes and rebuilds the whole [`Board`](super::Board), reusing [`RegionCache`](super::RegionCache) when the
 /// erosion key matches. Explicit layout buttons rerun only [`Layout`](super::super::layout::Layout).
 /// Presentation choices belong to [`HexPathsView`](super::HexPathsView) and [`HexPathsAppearance`](super::HexPathsAppearance).
-#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
-#[reflect(Resource)]
+#[derive(Debug, Clone, PartialEq, Reflect, Asset, Deserialize)]
 pub struct HexPathsSettings {
     /// Playable board width in hex columns, excluding the scenery margin.
     pub columns: u32,
@@ -103,7 +185,7 @@ impl HexPathsSettings {
 /// at one. Relief adds a bonus inside its range; river-sized flow subtracts
 /// a penalty. The highest total selects the board before actual nodes or
 /// trails are placed. Stored within [`HexTerrainTuning::window`].
-#[derive(Debug, Clone, PartialEq, Reflect)]
+#[derive(Debug, Clone, PartialEq, Reflect, Deserialize)]
 pub struct WindowWeights {
     /// Creek tiles in the playable area, full marks at `creek_tiles`.
     pub creek: f32,
@@ -160,8 +242,7 @@ impl Default for WindowWeights {
 /// Values follow hex-lab's `exp/15-density`, `trunk-sight` arm. Editing this
 /// resource requests full board regeneration. Visual exaggeration and colours
 /// are separate in [`HexPathsAppearance`](super::HexPathsAppearance).
-#[derive(Resource, Debug, Clone, PartialEq, Reflect)]
-#[reflect(Resource)]
+#[derive(Asset, Debug, Clone, PartialEq, Reflect, Deserialize)]
 pub struct HexTerrainTuning {
     /// Extra hexes of scenery around the playable board. Even, to keep the
     /// even-q offset parity.

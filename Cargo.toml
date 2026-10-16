@@ -18,6 +18,7 @@ clippy.nonstandard_macro_braces = "warn"
 bevy = "0.19"
 bevy_enhanced_input = "0.26"
 bevy_asset_loader = "0.27"
+bevy_common_assets = { version = "0.17", features = ["ron"] }
 bevy_editor_cam = { version = "0.10", default-features = false }
 avian3d = "0.7"
 # Loads Jackdaw-authored `.bsn` scenes, answers the editor's schema query and
@@ -29,6 +30,7 @@ tiny_bail = "0.7"
 bitflags = "2.9.3"
 hexx = "0.25"
 rand = "0.10"
+serde = { version = "1", features = ["derive"] }
 
 q_screens = { git = "https://github.com/cubething-qproj/q_screens", version = "^0.2.0", features = ["bevy_picking", "bevy_gilrs"] }
 q_cam = { git = "https://github.com/cubething-qproj/q_cam", version = "^0.1.0" }

@@ -28,7 +28,7 @@ use std::time::Duration;
 
 /// A small headless app for board replacement and unload-resource assertions.
 ///
-/// Owns ordinary settings, tuning, view, and cache resources. Presentation
+/// Owns settings and tuning assets, plus view and cache resources. Presentation
 /// tests install synthetic terrain; the replacement test runs generation with
 /// its normal parameters. Selected schedule stepping uses
 /// [`InputTestPlugin`] and the test harness's `AppExt` helpers.
@@ -40,25 +40,10 @@ impl Fixture {
     /// Creates the shared app and preview assets without generating a landscape.
     fn new() -> Self {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, InputTestPlugin))
-            .insert_resource(HexPathsSettings {
-                seed: Some(7),
-                columns: 6,
-                rows: 6,
-                pois: 3,
-                benches: 1,
-                crossings: 0,
-                teases: 0,
-                ..default()
-            })
-            // Used only by the generation/replacement scenario.
-            .insert_resource(HexTerrainTuning {
-                region_hexes: 24,
-                iterations: 40,
-                candidates: 2,
-                margin: 2,
-                ..default()
-            })
+        // AssetPlugin flushes settings edits as AssetEvents in PostUpdate.
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), InputTestPlugin))
+            .init_asset::<HexPathsSettings>()
+            .init_asset::<HexTerrainTuning>()
             .init_resource::<PanelState>()
             .init_resource::<RegionCache>()
             .init_resource::<HexPathsView>()
@@ -79,6 +64,30 @@ impl Fixture {
                 )
                     .chain(),
             );
+        let world = app.world_mut();
+        let paths = world
+            .resource_mut::<Assets<HexPathsSettings>>()
+            .add(HexPathsSettings {
+                seed: Some(7),
+                columns: 6,
+                rows: 6,
+                pois: 3,
+                benches: 1,
+                crossings: 0,
+                teases: 0,
+                ..default()
+            });
+        // Used only by the generation/replacement scenario.
+        let terrain = world
+            .resource_mut::<Assets<HexTerrainTuning>>()
+            .add(HexTerrainTuning {
+                region_hexes: 24,
+                iterations: 40,
+                candidates: 2,
+                margin: 2,
+                ..default()
+            });
+        world.insert_resource(HexSettingsCollection { paths, terrain });
         let quad = app
             .world_mut()
             .resource_mut::<Assets<Mesh>>()
@@ -106,8 +115,11 @@ impl Fixture {
     fn presentation() -> Self {
         let mut fixture = Self::new();
         let world = fixture.app.world_mut();
-        let settings = world.resource::<HexPathsSettings>();
-        let tuning = world.resource::<HexTerrainTuning>();
+        let collection = world.resource::<HexSettingsCollection>();
+        let settings = world.resource::<Assets<HexPathsSettings>>();
+        let settings = settings.get(&collection.paths).expect("fixture settings");
+        let tuning = world.resource::<Assets<HexTerrainTuning>>();
+        let tuning = tuning.get(&collection.terrain).expect("fixture tuning");
         let terrain = flat(settings.columns, settings.rows, tuning.margin);
         let context = Context {
             terrain: &terrain,
@@ -130,11 +142,21 @@ impl Fixture {
         fixture.app.add_systems(
             Update,
             systems::spawn_board
-                .run_if(resource_changed::<HexPathsSettings>)
+                .run_if(HexSettingsCollection::changed)
                 .before(systems::refresh_preview),
         );
         fixture.tick();
         fixture
+    }
+
+    /// Edits the settings asset, then steps once so PostUpdate flushes its
+    /// [`AssetEvent::Modified`] for the next Update's generation.
+    fn edit_settings(&mut self, edit: impl FnOnce(&mut HexPathsSettings)) {
+        let world = self.app.world_mut();
+        let id = world.resource::<HexSettingsCollection>().paths.id();
+        let mut assets = world.resource_mut::<Assets<HexPathsSettings>>();
+        edit(&mut assets.get_mut(id).expect("fixture settings"));
+        self.tick();
     }
 
     /// Runs only Update and PostUpdate without advancing time or simulating a full app frame.
@@ -213,11 +235,7 @@ impl Fixture {
 fn invalid_settings_clear_the_board_and_valid_settings_restore_it() {
     let mut fixture = Fixture::generated();
     fixture.assert_board_present();
-    fixture
-        .app
-        .world_mut()
-        .resource_mut::<HexPathsSettings>()
-        .columns = 0;
+    fixture.edit_settings(|s| s.columns = 0);
     fixture.tick();
     let world = fixture.app.world_mut();
     assert!(!world.contains_resource::<Board>());
@@ -230,11 +248,7 @@ fn invalid_settings_clear_the_board_and_valid_settings_restore_it() {
         0
     );
 
-    fixture
-        .app
-        .world_mut()
-        .resource_mut::<HexPathsSettings>()
-        .columns = 6;
+    fixture.edit_settings(|s| s.columns = 6);
     fixture.tick();
     fixture.assert_board_present();
 }

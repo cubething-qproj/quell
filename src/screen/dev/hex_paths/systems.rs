@@ -43,20 +43,20 @@ use rand::{SeedableRng, rngs::StdRng};
 /// error in [`BoardStats`]; layout-only failures behave differently in [`relayout`].
 pub(super) fn spawn_board(
     mut commands: Commands,
-    settings: Res<HexPathsSettings>,
-    tuning: Res<HexTerrainTuning>,
+    settings: HexSettings,
     mut cache: ResMut<RegionCache>,
     mut panel: ResMut<PanelState>,
     mut view: ResMut<HexPathsView>,
     roots: Query<Entity, With<BoardRoot>>,
 ) {
+    let (settings, tuning) = r!(settings.get());
     for root in &roots {
         commands.entity(root).despawn();
     }
     panel.regeneration_error = None;
     let seed = settings.seed.unwrap_or_else(rand::random);
     let board = settings.validate().and(tuning.validate()).and_then(|()| {
-        let key = RegionKey::new(seed, &settings, &tuning);
+        let key = RegionKey::new(seed, settings, tuning);
         if cache.0.as_ref().is_none_or(|(cached, _)| *cached != key) {
             let region = Region::simulate(&key, &mut StdRng::seed_from_u64(seed));
             cache.0 = Some((key, region));
@@ -65,14 +65,14 @@ pub(super) fn spawn_board(
         // The window draws from its own stream, so a cached region gives the
         // same board as a fresh one.
         let mut rng = StdRng::seed_from_u64(seed.wrapping_add(1));
-        let terrain = Terrain::generate(&settings, &tuning, region, &mut rng)?;
+        let terrain = Terrain::generate(settings, tuning, region, &mut rng)?;
         let context = Context {
             terrain: &terrain,
-            settings: &settings,
-            tuning: &tuning,
+            settings,
+            tuning,
         };
         let layout = Layout::generate(context, seed, None)?;
-        Ok(Board::new(terrain, layout, (&settings, &tuning), seed, 0))
+        Ok(Board::new(terrain, layout, (settings, tuning), seed, 0))
     });
     match board {
         Ok(board) => {
@@ -182,8 +182,7 @@ pub(super) fn spawn_surface(
     _: On<RebuildSurface>,
     mut commands: Commands,
     board: If<Res<Board>>,
-    settings: Res<HexPathsSettings>,
-    tuning: Res<HexTerrainTuning>,
+    settings: HexSettings,
     view: Res<HexPathsView>,
     appearance: Res<HexPathsAppearance>,
     root: Single<Entity, With<BoardRoot>>,
@@ -191,6 +190,7 @@ pub(super) fn spawn_surface(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
+    let (settings, tuning) = r!(settings.get());
     for surface in &surfaces {
         commands.entity(surface).despawn();
     }
@@ -198,7 +198,7 @@ pub(super) fn spawn_surface(
         TerrainSurface,
         Pickable::IGNORE,
         Name::new("Terrain"),
-        Mesh3d(meshes.add(board.surface_mesh(&settings, &tuning, view.view, &appearance))),
+        Mesh3d(meshes.add(board.surface_mesh(settings, tuning, view.view, &appearance))),
         MeshMaterial3d(materials.add(StandardMaterial {
             unlit: true,
             ..default()

@@ -48,7 +48,7 @@ pub(super) fn scene(width: f32) -> impl Scene {
             Children [
                 label("Hex paths"),
                 (@FeathersButton { @caption: bsn! { label("Regenerate") } }
-                    on(|_: On<Activate>, mut settings: ResMut<HexPathsSettings>| { settings.set_changed(); })),
+                    on(|_: On<Activate>, mut settings: ResMut<HexSettingsCollection>| { settings.set_changed(); })),
                 (label_small("") StatsText),
                 label("View"),
                 (Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
@@ -84,8 +84,8 @@ pub(super) fn scene(width: f32) -> impl Scene {
                     on(set_seed)
                 )]),
                 (@FeathersButton { @caption: bsn! { label("Pin current seed") } }
-                    on(|_: On<Activate>, stats: Option<Res<BoardStats>>, mut settings: ResMut<HexPathsSettings>| {
-                        if let Some(stats) = stats { settings.seed = Some(stats.seed); }
+                    on(|_: On<Activate>, stats: Option<Res<BoardStats>>, mut settings: HexSettingsMut| {
+                        if let (Some(stats), Some(mut paths)) = (stats, settings.paths_mut()) { paths.seed = Some(stats.seed); }
                     })),
                 slider("Columns", 4., 40., 1., |s| s.columns as f32, |s, v| s.columns = v as u32),
                 slider("Rows", 4., 40., 1., |s| s.rows as f32, |s, v| s.rows = v as u32),
@@ -116,18 +116,17 @@ fn relayout(
     regeneration: Option<bool>,
 ) -> impl FnMut(
     On<Activate>,
-    Res<HexPathsSettings>,
-    Res<HexTerrainTuning>,
+    HexSettings,
     ResMut<HexPathsView>,
     Option<ResMut<Board>>,
     ResMut<PanelState>,
 ) + Clone {
-    move |_, settings, tuning, mut view, board, mut panel| {
-        if let Some(mut board) = board {
+    move |_, settings, mut view, board, mut panel| {
+        if let (Some(mut board), Some((settings, tuning))) = (board, settings.get()) {
             systems::relayout(
                 regeneration,
-                &settings,
-                &tuning,
+                settings,
+                tuning,
                 &mut view,
                 &mut board,
                 &mut panel,
@@ -167,17 +166,20 @@ fn set_slider(
     change: On<ValueChange<f32>>,
     mut commands: Commands,
     fields: Query<&SettingSlider>,
-    mut settings: ResMut<HexPathsSettings>,
+    mut settings: HexSettingsMut,
 ) {
     commands
         .entity(change.source)
         .insert(SliderValue(change.value));
     if change.is_final
         && let Ok(field) = fields.get(change.source)
+        && let Some(mut settings) = settings.paths_mut()
     {
         let mut next = settings.clone();
         (field.write)(&mut next, change.value);
-        settings.set_if_neq(next);
+        if *settings != next {
+            *settings = next;
+        }
     }
 }
 
@@ -189,12 +191,13 @@ fn set_slider(
 fn set_seed(
     change: On<TextEditChange>,
     inputs: Query<&EditableText, With<SeedInput>>,
-    mut settings: ResMut<HexPathsSettings>,
+    mut settings: HexSettingsMut,
     mut panel: ResMut<PanelState>,
 ) {
     let Ok(input) = inputs.get(change.event_target()) else {
         return;
     };
+    let mut settings = r!(settings.paths_mut());
     let text = input.value().to_string();
     let seed = if text.is_empty() {
         Ok(None)
@@ -214,20 +217,23 @@ fn set_seed(
 
 /// Reflects settings edits into the panel without overwriting focused seed text.
 pub(super) fn sync_settings(
-    settings: Res<HexPathsSettings>,
+    settings: HexSettings,
+    mut edits: MessageReader<AssetEvent<HexPathsSettings>>,
     focus: Res<InputFocus>,
     mut commands: Commands,
     sliders: Query<(Entity, Ref<SettingSlider>, &SliderValue)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
 ) {
+    let changed = edits.read().count() > 0 || settings.collection().is_changed();
+    let settings = r!(settings.paths());
     for (entity, field, value) in &sliders {
-        let setting = (field.read)(&settings);
-        if (settings.is_changed() || field.is_added()) && value.0 != setting {
+        let setting = (field.read)(settings);
+        if (changed || field.is_added()) && value.0 != setting {
             commands.entity(entity).insert(SliderValue(setting));
         }
     }
     for (entity, mut input, marker) in &mut seeds {
-        if (settings.is_changed() || marker.is_added()) && focus.get() != Some(entity) {
+        if (changed || marker.is_added()) && focus.get() != Some(entity) {
             let text = settings
                 .seed
                 .map(|seed| seed.to_string())

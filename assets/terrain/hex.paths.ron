@@ -1,0 +1,15 @@
+(
+    columns: 20,
+    rows: 20,
+    seed: None,
+    uplift_m: 0.2,
+    channel_ha: 2.0,
+    creek_ha: 40.0,
+    pois: 6,
+    benches: 3,
+    spread: 2.0,
+    view: 0.7,
+    crossings: 2,
+    teases: 2,
+    water_boost: 1.0,
+)
