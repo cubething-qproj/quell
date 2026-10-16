@@ -17,6 +17,10 @@ use super::{
     terrain::erosion::{Region, RegionKey},
 };
 use crate::prelude::*;
+use bevy::{
+    feathers::controls::NumberInputValue,
+    reflect::{GetPath, TypeInfo, Typed},
+};
 
 mod board;
 mod plugin;
@@ -364,6 +368,15 @@ pub struct SeedInput;
 #[derive(Component, Default, Clone)]
 pub struct SettingsPanel;
 
+/// Marks a collapsible panel section of advanced settings editors.
+/// [`toggle_advanced`](super::panel::toggle_advanced) shows or hides its [`AdvancedBody`].
+#[derive(Component, Default, Clone)]
+pub struct AdvancedSection;
+
+/// Marks the rows of an [`AdvancedSection`], hidden until its disclosure toggle is checked.
+#[derive(Component, Default, Clone)]
+pub struct AdvancedBody;
+
 /// Connects a panel slider to one field of [`HexPathsSettings`].
 ///
 /// The read function synchronises external settings edits into the control;
@@ -373,6 +386,84 @@ pub struct SettingsPanel;
 pub struct SettingSlider {
     pub read: fn(&HexPathsSettings) -> f32,
     pub write: fn(&mut HexPathsSettings, f32),
+}
+
+/// Connects an advanced-panel number input to one reflected field of a settings asset.
+///
+/// Unlike [`SettingSlider`], rows are generated from [`SettingsAsset::leaves`],
+/// so every numeric field has an editor without a hand-written binding.
+/// `f32` fields use [`NumberInputValue::F32`]; `u32` fields use
+/// [`NumberInputValue::I64`], since feathers has no unsigned format.
+#[derive(Component, Clone)]
+pub struct SettingField {
+    pub asset: SettingsAsset,
+    /// Reflect path from the asset root, e.g. `window.relief_m.x`.
+    pub path: String,
+}
+
+impl SettingField {
+    /// Reads the field in its number-input format; `None` for non-numeric fields.
+    pub fn get(&self, root: &dyn Reflect) -> Option<NumberInputValue> {
+        let field = root.reflect_path(self.path.as_str()).ok()?;
+        let float = field.try_downcast_ref::<f32>().copied();
+        let int = field.try_downcast_ref::<u32>().copied();
+        float
+            .map(NumberInputValue::F32)
+            .or(int.map(|v| NumberInputValue::I64(v.into())))
+    }
+
+    /// Writes `value` into the field. `None` if the path or format does not
+    /// match the field, or an integer is out of `u32` range.
+    pub fn set(&self, root: &mut dyn Reflect, value: NumberInputValue) -> Option<()> {
+        let field = root.reflect_path_mut(self.path.as_str()).ok()?;
+        match value {
+            NumberInputValue::F32(v) => *field.try_downcast_mut::<f32>()? = v,
+            NumberInputValue::I64(v) => *field.try_downcast_mut::<u32>()? = v.try_into().ok()?,
+            _ => return None,
+        }
+        Some(())
+    }
+}
+
+/// Selects which settings asset a [`SettingField`] edits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettingsAsset {
+    /// [`HexPathsSettings`].
+    Paths,
+    /// [`HexTerrainTuning`].
+    Tuning,
+}
+
+impl SettingsAsset {
+    /// Every leaf field of the asset type as a dotted reflect path, depth-first
+    /// in declaration order, with its type. Nested structs such as
+    /// [`WindowWeights`] and `Vec2` are flattened rather than listed.
+    pub fn leaves(self) -> Vec<(String, &'static TypeInfo)> {
+        let info = match self {
+            Self::Paths => HexPathsSettings::type_info(),
+            Self::Tuning => HexTerrainTuning::type_info(),
+        };
+        Self::leaves_of(info, "")
+    }
+
+    fn leaves_of(info: &'static TypeInfo, prefix: &str) -> Vec<(String, &'static TypeInfo)> {
+        let TypeInfo::Struct(info) = info else {
+            return vec![];
+        };
+        info.iter()
+            .flat_map(|field| {
+                let path = match prefix {
+                    "" => field.name().to_string(),
+                    _ => format!("{prefix}.{}", field.name()),
+                };
+                match field.type_info() {
+                    Some(nested @ TypeInfo::Struct(_)) => Self::leaves_of(nested, &path),
+                    Some(leaf) => vec![(path, leaf)],
+                    None => vec![],
+                }
+            })
+            .collect()
+    }
 }
 
 /// The measure used to colour the rendered [`TerrainSurface`].
@@ -438,3 +529,30 @@ pub struct RebuildSurface;
 /// materials without replacing the marker entities.
 #[derive(Event)]
 pub struct RebuildMarkers;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every leaf field gets an advanced editor: numeric fields read and write
+    /// through their path, and only the seed is non-numeric.
+    #[test]
+    fn every_settings_field_is_editable() {
+        let mut roots: [(SettingsAsset, Box<dyn Reflect>); 2] = [
+            (SettingsAsset::Paths, Box::new(HexPathsSettings::default())),
+            (SettingsAsset::Tuning, Box::new(HexTerrainTuning::default())),
+        ];
+        for (asset, root) in &mut roots {
+            for (path, info) in asset.leaves() {
+                let field = SettingField {
+                    asset: *asset,
+                    path,
+                };
+                match field.get(root.as_ref()) {
+                    Some(value) => assert!(field.set(root.as_mut(), value).is_some()),
+                    None => assert!(info.is::<Option<u64>>(), "{} has no editor", field.path),
+                }
+            }
+        }
+    }
+}

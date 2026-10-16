@@ -30,7 +30,8 @@ pub struct HexPathsScreen;
 
 impl Screen for HexPathsScreen {
     fn builder(mut builder: ScreenScopeBuilder<Self>) -> ScreenScopeBuilder<Self> {
-        builder.add_systems(ScreenSchedule::OnLoad, (init_collection, init).chain());
+        builder.add_systems(ScreenSchedule::OnLoad, init_collection);
+        builder.add_systems(ScreenSchedule::Loading, init);
         builder.add_systems(ScreenSchedule::OnReady, request_board);
         builder.add_systems(
             ScreenSchedule::Update,

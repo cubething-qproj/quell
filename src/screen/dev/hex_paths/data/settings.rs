@@ -3,9 +3,19 @@
 //! [`HexPathsSettings`] supplies primary generation knobs; [`HexTerrainTuning`]
 //! supplies algorithm controls including [`WindowWeights`]. The screen detects
 //! changes to these assets and rebuilds the board, reusing cached erosion.
+//! The panel saves both assets back to their RON files with
+//! [`HexSettings::save`] and rereads them with [`HexSettingsCollection::reload`].
 
-use bevy::{asset::AssetMut, ecs::system::SystemParam};
-use serde::Deserialize;
+use bevy::{
+    asset::{
+        AssetMut,
+        saver::{SavedAsset, save_using_saver},
+    },
+    ecs::system::SystemParam,
+    tasks::IoTaskPool,
+};
+use bevy_common_assets::ron::RonAssetSaver;
+use serde::{Deserialize, Serialize};
 
 use crate::prelude::*;
 
@@ -39,6 +49,19 @@ impl HexSettingsCollection {
         let edits = paths.count() + terrain.count();
         collection.is_changed() || edits > 0
     }
+
+    /// Rereads both RON files from disk, replacing the loaded assets.
+    ///
+    /// Completion emits [`AssetEvent::Modified`], so [`Self::changed`] rebuilds
+    /// the board from the reloaded values even when the files are unchanged.
+    pub fn reload(&self, server: &AssetServer) {
+        for path in [self.paths.path(), self.terrain.path()]
+            .into_iter()
+            .flatten()
+        {
+            server.reload(path.clone());
+        }
+    }
 }
 
 /// Read access to the loaded settings assets named by [`HexSettingsCollection`].
@@ -69,23 +92,36 @@ impl<'w> HexSettings<'w> {
     pub fn collection(&self) -> &Res<'w, HexSettingsCollection> {
         &self.collection
     }
+
+    /// Overwrites both RON files with the loaded assets using [`RonAssetSaver`].
+    ///
+    /// Saving runs on the [`IoTaskPool`] through the asset source's writer and
+    /// logs its outcome; the writer also writes each file's `.meta`.
+    pub fn save(&self, server: &AssetServer) {
+        save_ron(server, self.paths(), &self.collection.paths);
+        save_ron(server, self.terrain(), &self.collection.terrain);
+    }
 }
 
-/// Write access to the [`HexPathsSettings`] asset named by [`HexSettingsCollection`].
+/// Write access to the settings assets named by [`HexSettingsCollection`].
 ///
 /// Mutating through [`AssetMut`] emits [`AssetEvent::Modified`], which
-/// [`HexSettingsCollection::changed`] turns into a board rebuild. Tuning is
-/// not panel-editable; edit its RON file and rely on hot reload instead.
+/// [`HexSettingsCollection::changed`] turns into a board rebuild.
 #[derive(SystemParam)]
 pub struct HexSettingsMut<'w> {
     collection: Res<'w, HexSettingsCollection>,
     paths: ResMut<'w, Assets<HexPathsSettings>>,
+    terrain: ResMut<'w, Assets<HexTerrainTuning>>,
 }
 
 impl HexSettingsMut<'_> {
     /// Mutable primary knobs, once loaded; only dereferencing mutably marks them modified.
     pub fn paths_mut(&mut self) -> Option<AssetMut<'_, HexPathsSettings>> {
         self.paths.get_mut(self.collection.paths.id())
+    }
+    /// Mutable tuning, once loaded; only dereferencing mutably marks it modified.
+    pub fn terrain_mut(&mut self) -> Option<AssetMut<'_, HexTerrainTuning>> {
+        self.terrain.get_mut(self.collection.terrain.id())
     }
 }
 
@@ -96,7 +132,7 @@ impl HexSettingsMut<'_> {
 /// changes and rebuilds the whole [`Board`](super::Board), reusing [`RegionCache`](super::RegionCache) when the
 /// erosion key matches. Explicit layout buttons rerun only [`Layout`](super::super::layout::Layout).
 /// Presentation choices belong to [`HexPathsView`](super::HexPathsView) and [`HexPathsAppearance`](super::HexPathsAppearance).
-#[derive(Debug, Clone, PartialEq, Reflect, Asset, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Reflect, Asset, Serialize, Deserialize)]
 pub struct HexPathsSettings {
     /// Playable board width in hex columns, excluding the scenery margin.
     pub columns: u32,
@@ -185,7 +221,7 @@ impl HexPathsSettings {
 /// at one. Relief adds a bonus inside its range; river-sized flow subtracts
 /// a penalty. The highest total selects the board before actual nodes or
 /// trails are placed. Stored within [`HexTerrainTuning::window`].
-#[derive(Debug, Clone, PartialEq, Reflect, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Reflect, Serialize, Deserialize)]
 pub struct WindowWeights {
     /// Creek tiles in the playable area, full marks at `creek_tiles`.
     pub creek: f32,
@@ -242,7 +278,7 @@ impl Default for WindowWeights {
 /// Values follow hex-lab's `exp/15-density`, `trunk-sight` arm. Editing this
 /// resource requests full board regeneration. Visual exaggeration and colours
 /// are separate in [`HexPathsAppearance`](super::HexPathsAppearance).
-#[derive(Asset, Debug, Clone, PartialEq, Reflect, Deserialize)]
+#[derive(Asset, Debug, Clone, PartialEq, Reflect, Serialize, Deserialize)]
 pub struct HexTerrainTuning {
     /// Extra hexes of scenery around the playable board. Even, to keep the
     /// even-q offset parity.
@@ -405,4 +441,25 @@ impl HexTerrainTuning {
     pub fn edges(&self, metres: f32) -> f32 {
         metres / self.edge_m
     }
+}
+
+/// Saves a loaded `asset` over the file its handle was loaded from.
+fn save_ron<A>(server: &AssetServer, asset: Option<&A>, handle: &Handle<A>)
+where
+    A: Asset + Clone + Serialize + for<'de> Deserialize<'de>,
+{
+    let (Some(asset), Some(path)) = (asset.cloned(), handle.path().cloned()) else {
+        return warn!("cannot save unloaded settings {handle:?}");
+    };
+    let server = server.clone();
+    IoTaskPool::get()
+        .spawn(async move {
+            let saver = RonAssetSaver::<A>::default();
+            let asset = SavedAsset::from_asset(&asset);
+            match save_using_saver(server, &saver, &path, asset, &()).await {
+                Ok(()) => info!("saved {path}"),
+                Err(error) => error!("saving {path} failed: {error}"),
+            }
+        })
+        .detach();
 }

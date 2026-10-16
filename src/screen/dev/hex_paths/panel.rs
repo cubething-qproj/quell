@@ -4,25 +4,37 @@
 //! controls to [`HexPathsView`], and layout buttons to [`relayout`](systems::relayout).
 //! Slider values apply on release; successful seed edits apply immediately.
 //! The screen detects settings changes and replaces the board, whereas explicit
-//! layout buttons reuse its terrain. Internal [`HexTerrainTuning`] controls
-//! are registered resources but do not all have panel sliders.
+//! layout buttons reuse its terrain. Collapsed advanced sections give every
+//! field of [`HexPathsSettings`] and [`HexTerrainTuning`] a [`SettingField`]
+//! editor, applied on Enter or focus loss. Save overwrites both RON files;
+//! Load rereads them, which rebuilds the board.
 //!
 //! [`sync_settings`] reflects external edits without replacing focused seed
-//! text. [`update_stats`] reports [`Board`]'s window and layout measurements
+//! or number text. [`update_stats`] reports [`Board`]'s window and layout measurements
 //! alongside [`BoardStats`] and [`PanelState`] errors.
 
 use super::{data::*, layout::NodeKind, systems};
 use crate::prelude::*;
 use bevy::{
+    asset::AssetMut,
     feathers::{
-        controls::{FeathersButton, FeathersSlider, FeathersTextInput, FeathersTextInputContainer},
+        controls::{
+            FeathersButton, FeathersDisclosureToggle, FeathersNumberInput, FeathersSlider,
+            FeathersTextInput, FeathersTextInputContainer, NumberFormat, NumberInputValue,
+            UpdateNumberInput,
+        },
         display::{label, label_small},
         theme::ThemeBackgroundColor,
         tokens,
     },
     input_focus::{InputFocus, tab_navigation::TabGroup},
+    reflect::TypeInfo,
+    scene::SceneList,
     text::{EditableText, EditableTextFilter, TextEdit, TextEditChange},
-    ui_widgets::{Activate, ScrollArea, SliderPrecision, SliderStep, SliderValue, ValueChange},
+    ui_widgets::{
+        Activate, ScrollArea, SliderPrecision, SliderStep, SliderValue, ValueChange,
+        checkbox_self_update,
+    },
 };
 
 /// Builds the scrollable panel for generation knobs, views, and layout requests.
@@ -47,8 +59,15 @@ pub(super) fn scene(width: f32) -> impl Scene {
             }
             Children [
                 label("Hex paths"),
-                (@FeathersButton { @caption: bsn! { label("Regenerate") } }
-                    on(|_: On<Activate>, mut settings: ResMut<HexSettingsCollection>| { settings.set_changed(); })),
+                (Node { column_gap: px(4) } Children [
+                    (@FeathersButton { @caption: bsn! { label("Regenerate") } }
+                        on(|_: On<Activate>, mut settings: ResMut<HexSettingsCollection>| { settings.set_changed(); })),
+                    (@FeathersButton { @caption: bsn! { label("Save") } } on(save_settings)),
+                    (@FeathersButton { @caption: bsn! { label("Load") } }
+                        on(|_: On<Activate>, settings: Res<HexSettingsCollection>, server: Res<AssetServer>| {
+                            settings.reload(&server);
+                        })),
+                ]),
                 (label_small("") StatsText),
                 label("View"),
                 (Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
@@ -78,11 +97,7 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 ]),
                 label("Generation"),
                 label_small("Seed (blank = random)"),
-                (@FeathersTextInputContainer Children [(
-                    @FeathersTextInput { @max_characters: 20usize }
-                    SeedInput EditableTextFilter::new(|c| c.is_ascii_digit())
-                    on(set_seed)
-                )]),
+                seed_input(),
                 (@FeathersButton { @caption: bsn! { label("Pin current seed") } }
                     on(|_: On<Activate>, stats: Option<Res<BoardStats>>, mut settings: HexSettingsMut| {
                         if let (Some(stats), Some(mut paths)) = (stats, settings.paths_mut()) { paths.seed = Some(stats.seed); }
@@ -102,6 +117,9 @@ pub(super) fn scene(width: f32) -> impl Scene {
                 label("Trails"),
                 slider("Crossings (0 ignores creeks)", 0., 4., 1., |s| s.crossings as f32, |s, v| s.crossings = v as u32),
                 slider("Teases", 0., 4., 1., |s| s.teases as f32, |s, v| s.teases = v as u32),
+                label("Advanced"),
+                advanced("Path settings", SettingsAsset::Paths),
+                advanced("Terrain tuning", SettingsAsset::Tuning),
             ]
         )]
     }
@@ -161,6 +179,81 @@ fn slider(
     }
 }
 
+/// The seed editor; blank text means a random seed. See [`set_seed`].
+fn seed_input() -> impl Scene {
+    bsn! {
+        @FeathersTextInputContainer Children [(
+            @FeathersTextInput { @max_characters: 20usize }
+            SeedInput EditableTextFilter::new(|c| c.is_ascii_digit())
+            on(set_seed)
+        )]
+    }
+}
+
+/// A collapsed [`AdvancedSection`] with an editor row for every leaf field of `asset`.
+fn advanced(title: &'static str, asset: SettingsAsset) -> impl Scene {
+    let rows: Vec<Box<dyn SceneList>> = asset
+        .leaves()
+        .into_iter()
+        .filter_map(|(path, info)| field_row(asset, path, info))
+        .collect();
+    bsn! {
+        AdvancedSection
+        Node { flex_direction: FlexDirection::Column, row_gap: px(4) }
+        Children [
+            (Node { align_items: AlignItems::Center, column_gap: px(6) } Children [
+                (@FeathersDisclosureToggle on(checkbox_self_update) on(toggle_advanced)),
+                label_small(title),
+            ]),
+            (AdvancedBody
+                Node { display: Display::None, flex_direction: FlexDirection::Column, row_gap: px(4) }
+                Children [{rows}]),
+        ]
+    }
+}
+
+/// One advanced row: the field's reflect path and an editor chosen by its type.
+///
+/// `f32` and `u32` fields get a [`SettingField`] number input; `Option<u64>`
+/// is the seed and reuses [`seed_input`]. Other types are skipped with a warning.
+fn field_row(
+    asset: SettingsAsset,
+    path: String,
+    info: &'static TypeInfo,
+) -> Option<Box<dyn SceneList>> {
+    let field = SettingField {
+        asset,
+        path: path.clone(),
+    };
+    let input: Box<dyn SceneList> = if info.is::<f32>() {
+        Box::new(bsn_list! {
+            @FeathersNumberInput { @number_format: NumberFormat::F32 }
+            Node { flex_grow: 1. }
+            template(move |_| Ok(field.clone()))
+            on(set_field(NumberInputValue::F32))
+        })
+    } else if info.is::<u32>() {
+        Box::new(bsn_list! {
+            @FeathersNumberInput { @number_format: NumberFormat::I64 }
+            Node { flex_grow: 1. }
+            template(move |_| Ok(field.clone()))
+            on(set_field(NumberInputValue::I64))
+        })
+    } else if info.is::<Option<u64>>() {
+        Box::new(bsn_list!(seed_input()))
+    } else {
+        warn!("no advanced editor for {path}: {}", info.type_path());
+        return None;
+    };
+    Some(Box::new(bsn_list! {
+        Node { align_items: AlignItems::Center, column_gap: px(8) }
+        Children [
+            (label_small(path) Node { width: percent(50) }),
+            {input},
+        ]
+    }))
+}
+
 /// Shows a slider's value while it is dragged and applies it on release.
 fn set_slider(
     change: On<ValueChange<f32>>,
@@ -215,17 +308,104 @@ fn set_seed(
     }
 }
 
-/// Reflects settings edits into the panel without overwriting focused seed text.
+/// Creates the observer applying a finished number-input edit to its [`SettingField`].
+///
+/// `wrap` converts the input's [`ValueChange`] payload, matching its
+/// [`NumberFormat`]. In-progress typing is ignored; Enter or focus loss
+/// applies. Unchanged or out-of-range values leave the asset untouched, so
+/// they do not request a rebuild.
+fn set_field<T: Copy + Send + Sync + 'static>(
+    wrap: fn(T) -> NumberInputValue,
+) -> impl FnMut(On<ValueChange<T>>, Query<&SettingField>, HexSettingsMut) + Clone {
+    move |change, fields, mut settings| {
+        let Ok(field) = fields.get(change.source) else {
+            return;
+        };
+        if !change.is_final {
+            return;
+        }
+        let value = wrap(change.value);
+        match field.asset {
+            SettingsAsset::Paths => apply_field(field, value, settings.paths_mut()),
+            SettingsAsset::Tuning => apply_field(field, value, settings.terrain_mut()),
+        }
+    }
+}
+
+/// Writes `value` through a copy, replacing the asset only when the copy changed.
+fn apply_field<A: Asset + Reflect + Clone + PartialEq>(
+    field: &SettingField,
+    value: NumberInputValue,
+    asset: Option<AssetMut<A>>,
+) {
+    let Some(mut asset) = asset else {
+        return;
+    };
+    let mut next = asset.clone();
+    if field.set(&mut next, value).is_none() {
+        warn!("{} cannot hold {value}", field.path);
+    } else if *asset != next {
+        *asset = next;
+    }
+}
+
+/// Overwrites both settings RON files with the current assets.
+fn save_settings(_: On<Activate>, settings: HexSettings, server: Res<AssetServer>) {
+    settings.save(&server);
+}
+
+/// Shows or hides the [`AdvancedBody`] of the toggle's [`AdvancedSection`].
+pub(super) fn toggle_advanced(
+    change: On<ValueChange<bool>>,
+    parents: Query<&ChildOf>,
+    sections: Query<&Children, With<AdvancedSection>>,
+    mut bodies: Query<&mut Node, With<AdvancedBody>>,
+) {
+    let Some(children) = parents
+        .iter_ancestors(change.source)
+        .find_map(|entity| sections.get(entity).ok())
+    else {
+        return;
+    };
+    let display = if change.value {
+        Display::Flex
+    } else {
+        Display::None
+    };
+    for child in children.iter() {
+        if let Ok(mut node) = bodies.get_mut(child) {
+            node.display = display;
+        }
+    }
+}
+
+/// Reflects settings edits into sliders, seed editors, and [`SettingField`]
+/// inputs without overwriting focused text.
 pub(super) fn sync_settings(
     settings: HexSettings,
     mut edits: MessageReader<AssetEvent<HexPathsSettings>>,
+    mut tuning_edits: MessageReader<AssetEvent<HexTerrainTuning>>,
     focus: Res<InputFocus>,
     mut commands: Commands,
     sliders: Query<(Entity, Ref<SettingSlider>, &SliderValue)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
+    fields: Query<(Entity, Ref<SettingField>)>,
 ) {
-    let changed = edits.read().count() > 0 || settings.collection().is_changed();
-    let settings = r!(settings.paths());
+    let edits = edits.read().count() + tuning_edits.read().count();
+    let changed = edits > 0 || settings.collection().is_changed();
+    let (settings, tuning) = r!(settings.get());
+    for (entity, field) in &fields {
+        let root: &dyn Reflect = match field.asset {
+            SettingsAsset::Paths => settings,
+            SettingsAsset::Tuning => tuning,
+        };
+        if (changed || field.is_added())
+            && let Some(value) = field.get(root)
+        {
+            // The number input ignores this while its text has focus.
+            commands.trigger(UpdateNumberInput { entity, value });
+        }
+    }
     for (entity, field, value) in &sliders {
         let setting = (field.read)(settings);
         if (changed || field.is_added()) && value.0 != setting {
