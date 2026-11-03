@@ -62,7 +62,7 @@ fn init(mut commands: Commands, server: Res<AssetServer>) {
             ScreenScoped,
             Name::new("Free Camera"),
         ));
-        commands.spawn(CameraTestInput::bundle());
+        commands.spawn_scene(CameraTestInput::bundle());
     }
 }
 

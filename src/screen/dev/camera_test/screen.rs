@@ -64,7 +64,7 @@ fn init(
     commands.trigger(SpawnGlobalCtx);
     commands.trigger(SpawnCursorCapture);
     commands.spawn((flycam_bundle(), ScreenScoped, Name::new("Free Camera")));
-    commands.spawn(tracking_cam_bundle(cube_entity)).insert((
+    commands.spawn_scene(tracking_cam_bundle(cube_entity)).insert((
         Camera {
             order: CameraOrder::World as isize,
             is_active: false,
@@ -73,7 +73,7 @@ fn init(
         ScreenScoped,
         Name::new("Tracking Camera"),
     ));
-    commands.spawn(CameraTestInput::bundle());
+    commands.spawn_scene(CameraTestInput::bundle());
     commands.spawn((
         Name::new("Camera Help"),
         ScreenScoped,
@@ -168,6 +168,8 @@ mod tests {
             let mut app = App::new();
             app.add_plugins((
                 MinimalPlugins,
+                AssetPlugin::default(),
+                bevy::scene::ScenePlugin,
                 InputTestPlugin,
                 EnhancedInputPlugin,
                 crate::service::input_plugin,
@@ -194,7 +196,8 @@ mod tests {
             let target = world.spawn(Transform::default()).id();
             let free = world.spawn(flycam_bundle()).id();
             let tracking = world
-                .spawn(tracking_cam_bundle(target))
+                .spawn_scene(tracking_cam_bundle(target))
+                .expect("tracking camera scene has no dependencies")
                 .insert((
                     Camera {
                         order: CameraOrder::World as isize,
@@ -206,7 +209,7 @@ mod tests {
                 .id();
             let ui = world.spawn(Camera2d).id();
             let help = world.spawn((CameraTestHelp, Text::new(FREE_HELP))).id();
-            world.spawn(CameraTestInput::bundle());
+            world.spawn_scene(CameraTestInput::bundle()).expect("input scene has no dependencies");
             Self {
                 app,
                 window,

@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 /// Always-active input context
-#[derive(Component)]
+#[derive(Component, Clone, Default)]
 pub struct ICtxGlobal;
 
 #[derive(InputAction)]

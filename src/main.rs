@@ -24,9 +24,12 @@ fn main() {
                 address_mode_w: ImageAddressMode::Repeat,
                 ..ImageSamplerDescriptor::linear()
             },
+            ..default()
         })),
         quell::AppPlugin { settings },
         jackdaw_runtime::JackdawPlugin,
+        // Builds avian colliders from the colliders the scene authors.
+        jackdaw_avian_integration::AvianColliderBridgePlugin,
     ));
     // Jackdaw's embedded Play streams frames through a `Readback` entity it spawns
     // lazily; keep it alive across screen changes.

@@ -59,31 +59,25 @@ fn release_cursor<E: Event>(
 
 fn spawn_cursor_capture(_trigger: On<SpawnCursorCapture>, mut commands: Commands) {
     debug!("spawn_capture_cursor_actions");
-    commands.spawn((
-        Name::new("Cursor capture"),
-        ScreenScoped,
-        ICtxCaptureCursor::default(),
-        ContextActivity::<ICtxCaptureCursor>::ACTIVE,
+    commands.spawn_scene(bsn! {
+        Name::new("Cursor capture")
+        ScreenScoped
+        ICtxCaptureCursor::default()
+        ContextActivity::<ICtxCaptureCursor>::ACTIVE
         // Quit (1000) checks capture first; release then precedes camera input (0).
-        ContextPriority::<ICtxCaptureCursor>::new(500),
-        actions![
-            ICtxCaptureCursor[
-                (
-                    Action::<PACaptureCursor>::new(),
-                    bindings![MouseButton::Left]
-                ),
-                (
-                    Action::<PAReleaseCursor>::new(),
-                    bindings![KeyCode::Escape],
-                    ActionSettings {
-                        consume_input: true,
-                        require_reset: true,
-                        ..Default::default()
-                    }
-                ),
-           ]
-        ],
-    ));
+        ContextPriority::<ICtxCaptureCursor>::new(500)
+        Actions<ICtxCaptureCursor> [
+            Action::<PACaptureCursor>::new()
+            Bindings [Binding(MouseButton::Left)]
+            --
+            Action::<PAReleaseCursor>::new()
+            Bindings [Binding(KeyCode::Escape)]
+            ActionSettings {
+                consume_input: true,
+                require_reset: true,
+            }
+        ]
+    });
 }
 
 fn sync_contexts(
@@ -138,7 +132,7 @@ fn sync_contexts(
 }
 
 fn on_remove_tracking(
-    event: On<Remove, SpringArm>,
+    event: On<Remove<SpringArm>>,
     cameras: Query<&Camera>,
     mut commands: Commands,
 ) {
@@ -151,7 +145,7 @@ fn on_remove_tracking(
 }
 
 fn reset_smoothing<C: Component>(
-    event: On<Insert, ContextActivity<C>>,
+    event: On<Insert<ContextActivity<C>>>,
     contexts: Query<(&ContextActivity<C>, &Actions<C>)>,
     mut modifiers: Query<&mut SmoothNudge>,
 ) {
@@ -180,5 +174,5 @@ pub fn plugin(app: &mut App) {
         .add_observer(on_remove_tracking)
         .add_observer(reset_smoothing::<ICtxDefault>)
         .add_observer(reset_smoothing::<SpringArm>)
-        .add_systems(PreUpdate, sync_contexts.after(EnhancedInputSystems::Apply));
+        .add_systems(PreUpdate, sync_contexts.after(EnhancedInputSystems::Trigger));
 }

@@ -1,7 +1,7 @@
 use crate::prelude::*;
 
 /// Enables cursor capture
-#[derive(Component, Default)]
+#[derive(Component, Clone, Default)]
 pub struct ICtxCaptureCursor {
     /// Accept a new capture click only after buttons held across a reset are released.
     pub(crate) armed: bool,

@@ -17,6 +17,18 @@ use hexx::{Hex, HexLayout, HexOrientation, OffsetHexMode};
 
 const OFFSET_MODE: OffsetHexMode = OffsetHexMode::Even;
 
+/// Converts a `hexx` vector to Bevy's, as `hexx` 0.25 uses an older `glam`.
+/// Remove with [`from_bevy`] once `hexx` releases a `glam` 0.33 version
+/// (ManevilleF/hexx#246).
+fn to_bevy(v: hexx::Vec2) -> Vec2 {
+    Vec2::from_array(v.to_array())
+}
+
+/// Converts a Bevy vector to `hexx`'s. See [`to_bevy`].
+fn from_bevy(v: Vec2) -> hexx::Vec2 {
+    hexx::Vec2::from_array(v.to_array())
+}
+
 /// The indexed geometry shared by [`Terrain`](super::Terrain) and its layouts.
 ///
 /// Tile indices address centres and six-corner pads; corner indices address
@@ -92,13 +104,13 @@ impl HexMesh {
                         (2. * corner.y / SQRT_3).round() as i32,
                     );
                     *keys.entry(key).or_insert_with(|| {
-                        mesh.positions.push(corner);
+                        mesh.positions.push(to_bevy(corner));
                         mesh.positions.len() - 1
                     })
                 });
                 mesh.index.insert(hex, mesh.tiles.len());
                 mesh.tiles.push(hex);
-                mesh.centers.push(layout.hex_to_world_pos(hex));
+                mesh.centers.push(to_bevy(layout.hex_to_world_pos(hex)));
                 mesh.tile_corners.push(corners);
                 mesh.playable.push(
                     (margin..margin + columns).contains(&column)
@@ -154,7 +166,7 @@ impl HexMesh {
     /// when [`window`](super::window) traces creeks.
     pub fn tile_containing(&self, point: Vec2) -> Option<usize> {
         self.index
-            .get(&HexLayout::flat().world_pos_to_hex(point))
+            .get(&HexLayout::flat().world_pos_to_hex(from_bevy(point)))
             .copied()
     }
 

@@ -20,6 +20,8 @@ impl Fixture {
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
+            AssetPlugin::default(),
+            bevy::scene::ScenePlugin,
             InputTestPlugin,
             TransformPlugin,
             EnhancedInputPlugin,
@@ -29,7 +31,11 @@ impl Fixture {
         app.finish();
         app.cleanup();
         let target = app.world_mut().spawn(Transform::from_xyz(1., 2., 3.)).id();
-        let camera = app.world_mut().spawn(tracking_cam_bundle(target)).id();
+        let camera = app
+            .world_mut()
+            .spawn_scene(tracking_cam_bundle(target))
+            .expect("tracking camera scene has no dependencies")
+            .id();
         let window = {
             let world = app.world_mut();
             world

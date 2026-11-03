@@ -13,23 +13,20 @@ fn exit_app(
 }
 
 fn spawn_global_ctx(_: On<SpawnGlobalCtx>, mut commands: Commands) {
-    commands.spawn((
-        ICtxGlobal,
-        ScreenScoped,
-        ContextActivity::<ICtxGlobal>::ACTIVE,
-        ContextPriority::<ICtxGlobal>::new(1000),
-        actions![
-            ICtxGlobal[(
-                Action::<PAQuit>::new(),
-                bindings![KeyCode::Escape],
-                ActionSettings {
-                    consume_input: false,
-                    require_reset: true,
-                    ..Default::default()
-                }
-            )]
-        ],
-    ));
+    commands.spawn_scene(bsn! {
+        ICtxGlobal
+        ScreenScoped
+        ContextActivity::<ICtxGlobal>::ACTIVE
+        ContextPriority::<ICtxGlobal>::new(1000)
+        Actions<ICtxGlobal> [
+            Action::<PAQuit>::new()
+            Bindings [Binding(KeyCode::Escape)]
+            ActionSettings {
+                consume_input: false,
+                require_reset: true,
+            }
+        ]
+    });
 }
 
 pub fn plugin(app: &mut App) {

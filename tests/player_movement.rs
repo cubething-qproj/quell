@@ -23,6 +23,8 @@ impl Fixture {
         let mut app = App::new();
         app.add_plugins((
             MinimalPlugins,
+            AssetPlugin::default(),
+            bevy::scene::ScenePlugin,
             InputTestPlugin,
             TransformPlugin,
             EnhancedInputPlugin,

@@ -31,34 +31,41 @@ pub(super) fn on_add_player_controller(mut world: DeferredWorld, ctx: HookContex
     let model = assets.model.clone();
     let collider = Collider::capsule(settings.capsule_radius, settings.capsule_height);
     let mut commands = world.commands();
-    commands.entity(ctx.entity).insert((
-        WorldAssetRoot(model),
-        collider,
-        actions!(
-            ICtxDefault[(
-                Action::<PAMove>::new(),
-                DeadZone::default(),
-                SmoothNudge::new(16.),
-                Negate::y(),
-                SwizzleAxis::XZY,
-                Bindings::spawn((Cardinal::wasd_keys(), Axial::left_stick())),
-            ),
-            (
-                Action::<PARawMoveInput>::new(),
-                DeadZone::default(),
-                Negate::y(),
-                SwizzleAxis::XZY,
-                Bindings::spawn((Cardinal::wasd_keys(), Axial::left_stick())),
-            )]
-        ),
-    ));
-    commands.spawn((
-        Name::new("PlayerCam"),
-        PlayerCameraOf(ctx.entity),
-        (LockedAxes::new().lock_rotation_z(),),
-        (PointLight::default()),
-        tracking_cam_bundle(ctx.entity),
-    ));
+    commands
+        .entity(ctx.entity)
+        .insert((WorldAssetRoot(model), collider))
+        .apply_scene(bsn! {
+            Actions<ICtxDefault> [
+                Action::<PAMove>::new()
+                DeadZone::default()
+                ~SmoothNudge::new(16.)
+            ~Negate::y()
+                ~SwizzleAxis::XZY
+                Bindings [
+                    {preset::cardinal::wasd_keys()}
+                    --
+                    {preset::axial::left_stick()}
+                ]
+                --
+                Action::<PARawMoveInput>::new()
+                DeadZone::default()
+            ~Negate::y()
+                ~SwizzleAxis::XZY
+                Bindings [
+                    {preset::cardinal::wasd_keys()}
+                    --
+                    {preset::axial::left_stick()}
+                ]
+            ]
+        });
+    commands
+        .spawn_scene(tracking_cam_bundle(ctx.entity))
+        .insert((
+            Name::new("PlayerCam"),
+            PlayerCameraOf(ctx.entity),
+            (LockedAxes::new().lock_rotation_z(),),
+            (PointLight::default()),
+        ));
 }
 
 fn on_move(
@@ -82,7 +89,7 @@ fn on_input_complete(
 }
 
 fn on_player_spawn(
-    trigger: On<Insert, PlayerSpawn>,
+    trigger: On<Insert<PlayerSpawn>>,
     spawns: Query<&GlobalTransform>,
     players: Query<(), With<PlayerController>>,
     mut commands: Commands,
@@ -126,6 +133,8 @@ mod tests {
             let mut app = App::new();
             app.add_plugins((
                 MinimalPlugins,
+                AssetPlugin::default(),
+                bevy::scene::ScenePlugin,
                 InputTestPlugin,
                 TransformPlugin,
                 EnhancedInputPlugin,
@@ -251,7 +260,7 @@ mod tests {
     fn spawned_player_lands_on_the_ground_with_player_membership() {
         let mut app = App::new();
         let dt = Duration::from_millis(16);
-        app.add_plugins((MinimalPlugins, TransformPlugin))
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), bevy::scene::ScenePlugin, TransformPlugin))
             .init_resource::<Assets<Mesh>>()
             .add_message::<AssetEvent<Mesh>>()
             .init_resource::<PlayerAssets>()
@@ -305,7 +314,7 @@ mod tests {
     #[test]
     fn spawn_point_spawns_one_player_and_replaces_a_missing_one() {
         let mut app = App::new();
-        app.add_plugins((MinimalPlugins, TransformPlugin))
+        app.add_plugins((MinimalPlugins, AssetPlugin::default(), bevy::scene::ScenePlugin, TransformPlugin))
             .init_resource::<Assets<Mesh>>()
             .add_message::<AssetEvent<Mesh>>()
             .init_resource::<PlayerAssets>()
