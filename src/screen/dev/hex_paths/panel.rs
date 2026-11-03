@@ -353,7 +353,7 @@ fn set_seed(
 /// Creates the observer applying a finished number-input edit to its [`SettingField`].
 ///
 /// `wrap` converts the input's [`ValueChange`] payload, matching its
-/// [`NumberFormat`]. In-progress typing is ignored; Enter or focus loss
+/// [`NumberInputValue`] variant. In-progress typing is ignored; Enter or focus loss
 /// applies. Unchanged or out-of-range values leave the asset untouched, so
 /// they do not request a rebuild.
 fn set_field<T: Copy + Send + Sync + 'static>(
@@ -432,6 +432,7 @@ pub(super) fn sync_settings(
     sliders: Query<(Entity, Ref<SettingSlider>, &SliderValue)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
     fields: Query<(Entity, Ref<SettingField>)>,
+    parents: Query<&ChildOf>,
 ) {
     let edits = edits.read().count() + tuning_edits.read().count();
     let changed = edits > 0 || settings.collection().is_changed();
@@ -441,10 +442,15 @@ pub(super) fn sync_settings(
             SettingsAsset::Paths => settings,
             SettingsAsset::Tuning => tuning,
         };
+        // Unlike 0.19's `UpdateNumberInput`, inserting the value overwrites
+        // the text even while it has focus, so skip inputs being edited.
+        let editing = focus
+            .get()
+            .is_some_and(|focused| parents.iter_ancestors(focused).any(|e| e == entity));
         if (changed || field.is_added())
+            && !editing
             && let Some(value) = field.get(root)
         {
-            // The number input ignores this while its text has focus.
             commands.entity(entity).insert(value);
         }
     }

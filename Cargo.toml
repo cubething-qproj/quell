@@ -21,8 +21,10 @@ bevy_asset_loader = "0.28"
 bevy_common_assets = { version = "0.18", features = ["ron"] }
 avian3d = "0.8"
 # Loads Jackdaw-authored `.bsn` scenes, answers the editor's schema query and
-# connects Play-in-editor. 0.19 is git-only; keep `rev` matching the installed editor.
+# connects Play-in-editor. Keep the version matching the installed editor.
 jackdaw_runtime = "0.20"
+# Builds avian colliders for authored `AvianCollider`s (0.19's `physics` feature).
+# No `terrain`: we don't enable jackdaw_runtime's terrain either.
 jackdaw_avian_integration = { version = "0.20", default-features = false }
 
 # not bevy

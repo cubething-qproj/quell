@@ -39,7 +39,7 @@ pub(super) fn on_add_player_controller(mut world: DeferredWorld, ctx: HookContex
                 Action::<PAMove>::new()
                 DeadZone::default()
                 ~SmoothNudge::new(16.)
-            ~Negate::y()
+                ~Negate::y()
                 ~SwizzleAxis::XZY
                 Bindings [
                     {preset::cardinal::wasd_keys()}
@@ -49,7 +49,7 @@ pub(super) fn on_add_player_controller(mut world: DeferredWorld, ctx: HookContex
                 --
                 Action::<PARawMoveInput>::new()
                 DeadZone::default()
-            ~Negate::y()
+                ~Negate::y()
                 ~SwizzleAxis::XZY
                 Bindings [
                     {preset::cardinal::wasd_keys()}
