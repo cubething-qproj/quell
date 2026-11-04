@@ -18,7 +18,7 @@ use bevy::{
     ecs::schedule::ScheduleLabel,
     picking::{
         backend::HitData,
-        events::Press,
+        events::{Pointer, PointerPress},
         pointer::{Location, PointerId},
     },
     prelude::*,
@@ -212,22 +212,22 @@ impl Fixture {
 
     /// Injects the event delivered after picking, without exercising the ray-casting backend.
     fn press_marker(&mut self, marker: Entity, camera: Entity, button: PointerButton) {
-        self.app.world_mut().trigger(Pointer::new(
-            PointerId::Mouse,
-            Location {
-                target: NormalizedRenderTarget::None {
-                    width: 800,
-                    height: 600,
+        self.app.world_mut().trigger(PointerPress {
+            entity: marker,
+            pointer: Pointer::new(
+                PointerId::Mouse,
+                Location {
+                    target: NormalizedRenderTarget::None {
+                        width: 800,
+                        height: 600,
+                    },
+                    position: Vec2::ZERO,
                 },
-                position: Vec2::ZERO,
-            },
-            Press {
-                button,
-                count: 1,
-                hit: HitData::new(camera, 1., None, None),
-            },
-            marker,
-        ));
+            ),
+            button,
+            hit: HitData::new(camera, 1., None, None),
+            count: 1,
+        });
     }
 }
 

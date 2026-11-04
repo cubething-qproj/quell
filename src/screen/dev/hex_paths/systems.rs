@@ -25,12 +25,11 @@ use super::{
 use crate::prelude::*;
 use bevy::{
     camera::Viewport,
+    camera_controller::pan_orbit_camera::prelude::PanOrbitCamera,
     input::mouse::{AccumulatedMouseMotion, AccumulatedMouseScroll, MouseScrollUnit},
-    picking::events::Press,
     prelude::*,
     window::PrimaryWindow,
 };
-use bevy_editor_cam::prelude::EditorCam;
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Replaces the board after generation settings change, or on screen entry.
@@ -283,7 +282,7 @@ pub(super) fn paint_markers(
 /// Player focus; POIs and benches select their tile in [`CameraFocus::Node`].
 /// This sets camera focus only, not a walking destination.
 pub(super) fn pick_focus(
-    press: On<Pointer<Press>>,
+    press: On<PointerPress>,
     cameras: Query<(), With<HexPathsCamera>>,
     markers: Query<(&Marker, &Pad)>,
     mut view: ResMut<HexPathsView>,
@@ -352,7 +351,7 @@ pub(super) fn aim_camera(
         board.focus(view.focus, appearance.vertical_scale) - camera.forward() * distance;
 }
 
-/// Feeds orbit and zoom input to the board's editor-camera controller.
+/// Feeds orbit and zoom input to the board's pan-orbit camera controller.
 ///
 /// Right-drag starts an orbit only within the board viewport and ends on
 /// release. Wheel input can start a zoom there when motion is not already
@@ -366,7 +365,7 @@ pub(super) fn orbit_camera(
     window: Single<&Window, With<PrimaryWindow>>,
     board: If<Res<Board>>,
     view: Res<HexPathsView>,
-    camera: Single<(&Camera, &Transform, &mut EditorCam), With<HexPathsCamera>>,
+    camera: Single<(&Camera, &Transform, &mut PanOrbitCamera), With<HexPathsCamera>>,
 ) {
     let (camera, transform, mut controller) = camera.into_inner();
     if mouse.just_released(MouseButton::Right) {

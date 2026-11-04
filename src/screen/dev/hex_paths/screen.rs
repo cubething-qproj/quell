@@ -14,10 +14,10 @@
 use super::{data::*, panel, systems};
 use crate::prelude::*;
 use bevy::{
+    camera_controller::pan_orbit_camera::prelude::{EnabledMotion, PanOrbitCamera},
     feathers::{dark_theme::create_dark_theme, theme::UiTheme},
     prelude::*,
 };
-use bevy_editor_cam::prelude::{EditorCam, EnabledMotion};
 
 /// The dev [`Screen`] combining generation, inspection controls, and a 3D preview.
 ///
@@ -96,7 +96,7 @@ fn init(
         MeshPickingCamera,
         Camera3d::default(),
         // Panning will follow the player or terrain instead.
-        EditorCam {
+        PanOrbitCamera {
             enabled_motion: EnabledMotion {
                 pan: false,
                 orbit: true,

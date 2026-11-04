@@ -17,8 +17,11 @@
 //! `trunk-sight` arm; the relationships and pipelines are documented here.
 
 use crate::prelude::*;
-use bevy::{feathers::FeathersPlugins, prelude::*};
-use bevy_editor_cam::prelude::MinimalEditorCamPlugin;
+use bevy::{
+    camera_controller::pan_orbit_camera::controller::MinimalPanOrbitCameraPlugin,
+    feathers::FeathersPlugins,
+    prelude::*,
+};
 
 mod data;
 mod layout;
@@ -44,7 +47,7 @@ pub fn plugin(app: &mut App) {
     if !app.is_plugin_added::<MeshPickingPlugin>() {
         app.add_plugins(MeshPickingPlugin);
     }
-    app.add_plugins((FeathersPlugins, MinimalEditorCamPlugin))
+    app.add_plugins((FeathersPlugins, MinimalPanOrbitCameraPlugin))
         .add_plugins(data::plugin)
         .add_observer(systems::spawn_surface)
         .add_observer(systems::spawn_markers)

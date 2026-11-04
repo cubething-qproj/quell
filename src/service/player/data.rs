@@ -115,7 +115,7 @@ pub struct PlayerAssets {
     // Only move-and-slide moves the body.
     CustomPositionIntegration,
     // No speculative contact impulses from the kinematic body.
-    SpeculativeMargin::ZERO,
+    SpeculativeCcd::ZERO,
     TransformInterpolation
 )]
 pub struct PlayerMotor {

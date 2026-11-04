@@ -20,8 +20,7 @@ use bevy::{
     feathers::{
         controls::{
             FeathersButton, FeathersDisclosureToggle, FeathersNumberInput, FeathersSlider,
-            FeathersTextInput, FeathersTextInputContainer, NumberFormat, NumberInputValue,
-            UpdateNumberInput,
+            FeathersTextInput, FeathersTextInputContainer, NumberInputValue,
         },
         display::{label, label_small},
         theme::ThemeBackgroundColor,
@@ -51,77 +50,116 @@ pub(super) fn scene(width: f32) -> impl Scene {
             overflow: Overflow::scroll_y(),
         }
         ThemeBackgroundColor(tokens::WINDOW_BG)
-        Children [(
+        Children [
             Node {
                 width: percent(100), flex_shrink: 0.,
                 flex_direction: FlexDirection::Column,
                 padding: px(12), row_gap: px(6),
             }
             Children [
-                label("Hex paths"),
-                (Node { column_gap: px(4) } Children [
-                    (@FeathersButton { @caption: bsn! { label("Regenerate") } }
-                        on(|_: On<Activate>, mut settings: ResMut<HexSettingsCollection>| { settings.set_changed(); })),
-                    (@FeathersButton { @caption: bsn! { label("Save") } } on(save_settings)),
-                    (@FeathersButton { @caption: bsn! { label("Load") } }
+                @label("Hex paths")
+                --
+                Node { column_gap: px(4) } Children [
+                    @FeathersButton { @caption: bsn! { @label("Regenerate") } }
+                        on(|_: On<Activate>, mut settings: ResMut<HexSettingsCollection>| { settings.set_changed(); })
+                    --
+                    @FeathersButton { @caption: bsn! { @label("Save") } } on(save_settings)
+                    --
+                    @FeathersButton { @caption: bsn! { @label("Load") } }
                         on(|_: On<Activate>, settings: Res<HexSettingsCollection>, server: Res<AssetServer>| {
                             settings.reload(&server);
-                        })),
-                ]),
-                (label_small("") StatsText),
-                label("View"),
-                (Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
-                    (@FeathersButton { @caption: bsn! { label("Heightmap") } }
-                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Heightmap; })),
-                    (@FeathersButton { @caption: bsn! { label("Cost") } }
-                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Cost; })),
-                    (@FeathersButton { @caption: bsn! { label("Suitability") } }
-                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Suitability; })),
-                    (@FeathersButton { @caption: bsn! { label("Bench score") } }
-                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::BenchScore; })),
-                ]),
-                (@FeathersButton { @caption: bsn! { label("Reveal nodes") } }
-                    on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.reveal_nodes = !v.reveal_nodes; })),
-                label_small("Layout (same terrain; regenerate round the focus)"),
-                (Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
-                    (@FeathersButton { @caption: bsn! { label("New layout") } } on(relayout(None))),
-                    (@FeathersButton { @caption: bsn! { label("Regenerate here") } } on(relayout(Some(false)))),
-                    (@FeathersButton { @caption: bsn! { label("Fear here") } } on(relayout(Some(true)))),
-                ]),
-                label_small("Camera focus (or click a marker)"),
-                (Node { column_gap: px(4) } Children [
-                    (@FeathersButton { @caption: bsn! { label("Terrain") } }
-                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.focus = CameraFocus::Terrain; })),
-                    (@FeathersButton { @caption: bsn! { label("Player") } }
-                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.focus = CameraFocus::Player; })),
-                ]),
-                label("Generation"),
-                label_small("Seed (blank = random)"),
-                seed_input(),
-                (@FeathersButton { @caption: bsn! { label("Pin current seed") } }
+                        })
+                ]
+                --
+                @label_small("") StatsText
+                --
+                @label("View")
+                --
+                Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
+                    @FeathersButton { @caption: bsn! { @label("Heightmap") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Heightmap; })
+                    --
+                    @FeathersButton { @caption: bsn! { @label("Cost") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Cost; })
+                    --
+                    @FeathersButton { @caption: bsn! { @label("Suitability") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::Suitability; })
+                    --
+                    @FeathersButton { @caption: bsn! { @label("Bench score") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.view = TerrainView::BenchScore; })
+                ]
+                --
+                @FeathersButton { @caption: bsn! { @label("Reveal nodes") } }
+                    on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.reveal_nodes = !v.reveal_nodes; })
+                --
+                @label_small("Layout (same terrain; regenerate round the focus)")
+                --
+                Node { column_gap: px(4), flex_wrap: FlexWrap::Wrap, row_gap: px(4) } Children [
+                    @FeathersButton { @caption: bsn! { @label("New layout") } } on(relayout(None))
+                    --
+                    @FeathersButton { @caption: bsn! { @label("Regenerate here") } } on(relayout(Some(false)))
+                    --
+                    @FeathersButton { @caption: bsn! { @label("Fear here") } } on(relayout(Some(true)))
+                ]
+                --
+                @label_small("Camera focus (or click a marker)")
+                --
+                Node { column_gap: px(4) } Children [
+                    @FeathersButton { @caption: bsn! { @label("Terrain") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.focus = CameraFocus::Terrain; })
+                    --
+                    @FeathersButton { @caption: bsn! { @label("Player") } }
+                        on(|_: On<Activate>, mut v: ResMut<HexPathsView>| { v.focus = CameraFocus::Player; })
+                ]
+                --
+                @label("Generation")
+                --
+                @label_small("Seed (blank = random)")
+                --
+                @seed_input()
+                --
+                @FeathersButton { @caption: bsn! { @label("Pin current seed") } }
                     on(|_: On<Activate>, stats: Option<Res<BoardStats>>, mut settings: HexSettingsMut| {
                         if let (Some(stats), Some(mut paths)) = (stats, settings.paths_mut()) { paths.seed = Some(stats.seed); }
-                    })),
-                slider("Columns", 4., 40., 1., |s| s.columns as f32, |s, v| s.columns = v as u32),
-                slider("Rows", 4., 40., 1., |s| s.rows as f32, |s, v| s.rows = v as u32),
-                label("Terrain"),
-                slider("Uplift per pass (m)", 0.05, 1., 0.05, |s| s.uplift_m, |s, v| s.uplift_m = v),
-                slider("Channels start at (ha)", 0.5, 10., 0.5, |s| s.channel_ha, |s, v| s.channel_ha = v),
-                slider("Creeks start at (ha)", 10., 200., 5., |s| s.creek_ha, |s, v| s.creek_ha = v),
-                label("Nodes"),
-                slider("Points of interest", 0., 20., 1., |s| s.pois as f32, |s, v| s.pois = v as u32),
-                slider("Benches", 0., 10., 1., |s| s.benches as f32, |s, v| s.benches = v as u32),
-                slider("Prefer flat ground (spread)", 0., 4., 0.1, |s| s.spread, |s, v| s.spread = v),
-                slider("Bench view: quiet 0 – overlook 1", 0., 1., 0.05, |s| s.view, |s, v| s.view = v),
-                slider("Pull to water", 0., 3., 0.25, |s| s.water_boost, |s, v| s.water_boost = v),
-                label("Trails"),
-                slider("Crossings (0 ignores creeks)", 0., 4., 1., |s| s.crossings as f32, |s, v| s.crossings = v as u32),
-                slider("Teases", 0., 4., 1., |s| s.teases as f32, |s, v| s.teases = v as u32),
-                label("Advanced"),
-                advanced("Path settings", SettingsAsset::Paths),
-                advanced("Terrain tuning", SettingsAsset::Tuning),
+                    })
+                --
+                @slider("Columns", 4., 40., 1., |s| s.columns as f32, |s, v| s.columns = v as u32)
+                --
+                @slider("Rows", 4., 40., 1., |s| s.rows as f32, |s, v| s.rows = v as u32)
+                --
+                @label("Terrain")
+                --
+                @slider("Uplift per pass (m)", 0.05, 1., 0.05, |s| s.uplift_m, |s, v| s.uplift_m = v)
+                --
+                @slider("Channels start at (ha)", 0.5, 10., 0.5, |s| s.channel_ha, |s, v| s.channel_ha = v)
+                --
+                @slider("Creeks start at (ha)", 10., 200., 5., |s| s.creek_ha, |s, v| s.creek_ha = v)
+                --
+                @label("Nodes")
+                --
+                @slider("Points of interest", 0., 20., 1., |s| s.pois as f32, |s, v| s.pois = v as u32)
+                --
+                @slider("Benches", 0., 10., 1., |s| s.benches as f32, |s, v| s.benches = v as u32)
+                --
+                @slider("Prefer flat ground (spread)", 0., 4., 0.1, |s| s.spread, |s, v| s.spread = v)
+                --
+                @slider("Bench view: quiet 0 – overlook 1", 0., 1., 0.05, |s| s.view, |s, v| s.view = v)
+                --
+                @slider("Pull to water", 0., 3., 0.25, |s| s.water_boost, |s, v| s.water_boost = v)
+                --
+                @label("Trails")
+                --
+                @slider("Crossings (0 ignores creeks)", 0., 4., 1., |s| s.crossings as f32, |s, v| s.crossings = v as u32)
+                --
+                @slider("Teases", 0., 4., 1., |s| s.teases as f32, |s, v| s.teases = v as u32)
+                --
+                @label("Advanced")
+                --
+                @advanced("Path settings", SettingsAsset::Paths)
+                --
+                @advanced("Terrain tuning", SettingsAsset::Tuning)
             ]
-        )]
+        ]
     }
 }
 
@@ -169,12 +207,13 @@ fn slider(
     bsn! {
         Node { align_items: AlignItems::Center, column_gap: px(8) }
         Children [
-            (label_small(caption) Node { width: percent(50) }),
-            (@FeathersSlider { @min: min, @max: max, @value: min }
+            @label_small(caption) Node { width: percent(50) }
+            --
+            @FeathersSlider { @min: min, @max: max }
                 Node { flex_grow: 1. }
                 SliderStep(step) SliderPrecision(precision)
                 template(move |_| Ok(SettingSlider { read, write }))
-                on(set_slider)),
+                on(set_slider)
         ]
     }
 }
@@ -182,11 +221,11 @@ fn slider(
 /// The seed editor; blank text means a random seed. See [`set_seed`].
 fn seed_input() -> impl Scene {
     bsn! {
-        @FeathersTextInputContainer Children [(
+        @FeathersTextInputContainer Children [
             @FeathersTextInput { @max_characters: 20usize }
             SeedInput EditableTextFilter::new(|c| c.is_ascii_digit())
             on(set_seed)
-        )]
+        ]
     }
 }
 
@@ -201,13 +240,15 @@ fn advanced(title: &'static str, asset: SettingsAsset) -> impl Scene {
         AdvancedSection
         Node { flex_direction: FlexDirection::Column, row_gap: px(4) }
         Children [
-            (Node { align_items: AlignItems::Center, column_gap: px(6) } Children [
-                (@FeathersDisclosureToggle on(checkbox_self_update) on(toggle_advanced)),
-                label_small(title),
-            ]),
-            (AdvancedBody
+            Node { align_items: AlignItems::Center, column_gap: px(6) } Children [
+                @FeathersDisclosureToggle on(checkbox_self_update) on(toggle_advanced)
+                --
+                @label_small(title)
+            ]
+            --
+            AdvancedBody
                 Node { display: Display::None, flex_direction: FlexDirection::Column, row_gap: px(4) }
-                Children [{rows}]),
+                Children [{rows}]
         ]
     }
 }
@@ -227,20 +268,20 @@ fn field_row(
     };
     let input: Box<dyn SceneList> = if info.is::<f32>() {
         Box::new(bsn_list! {
-            @FeathersNumberInput { @number_format: NumberFormat::F32 }
+            @FeathersNumberInput NumberInputValue::F32(0.)
             Node { flex_grow: 1. }
             template(move |_| Ok(field.clone()))
             on(set_field(NumberInputValue::F32))
         })
     } else if info.is::<u32>() {
         Box::new(bsn_list! {
-            @FeathersNumberInput { @number_format: NumberFormat::I64 }
+            @FeathersNumberInput NumberInputValue::I64(0)
             Node { flex_grow: 1. }
             template(move |_| Ok(field.clone()))
             on(set_field(NumberInputValue::I64))
         })
     } else if info.is::<Option<u64>>() {
-        Box::new(bsn_list!(seed_input()))
+        Box::new(bsn_list! { @seed_input() })
     } else {
         warn!("no advanced editor for {path}: {}", info.type_path());
         return None;
@@ -248,8 +289,9 @@ fn field_row(
     Some(Box::new(bsn_list! {
         Node { align_items: AlignItems::Center, column_gap: px(8) }
         Children [
-            (label_small(path) Node { width: percent(50) }),
-            {input},
+            @label_small(path) Node { width: percent(50) }
+            --
+            {input}
         ]
     }))
 }
@@ -311,7 +353,7 @@ fn set_seed(
 /// Creates the observer applying a finished number-input edit to its [`SettingField`].
 ///
 /// `wrap` converts the input's [`ValueChange`] payload, matching its
-/// [`NumberFormat`]. In-progress typing is ignored; Enter or focus loss
+/// [`NumberInputValue`] variant. In-progress typing is ignored; Enter or focus loss
 /// applies. Unchanged or out-of-range values leave the asset untouched, so
 /// they do not request a rebuild.
 fn set_field<T: Copy + Send + Sync + 'static>(
@@ -390,6 +432,7 @@ pub(super) fn sync_settings(
     sliders: Query<(Entity, Ref<SettingSlider>, &SliderValue)>,
     mut seeds: Query<(Entity, &mut EditableText, Ref<SeedInput>)>,
     fields: Query<(Entity, Ref<SettingField>)>,
+    parents: Query<&ChildOf>,
 ) {
     let edits = edits.read().count() + tuning_edits.read().count();
     let changed = edits > 0 || settings.collection().is_changed();
@@ -399,11 +442,16 @@ pub(super) fn sync_settings(
             SettingsAsset::Paths => settings,
             SettingsAsset::Tuning => tuning,
         };
+        // Unlike 0.19's `UpdateNumberInput`, inserting the value overwrites
+        // the text even while it has focus, so skip inputs being edited.
+        let editing = focus
+            .get()
+            .is_some_and(|focused| parents.iter_ancestors(focused).any(|e| e == entity));
         if (changed || field.is_added())
+            && !editing
             && let Some(value) = field.get(root)
         {
-            // The number input ignores this while its text has focus.
-            commands.trigger(UpdateNumberInput { entity, value });
+            commands.entity(entity).insert(value);
         }
     }
     for (entity, field, value) in &sliders {

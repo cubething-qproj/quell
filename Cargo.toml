@@ -15,15 +15,17 @@ clippy.type_complexity = "allow"
 clippy.nonstandard_macro_braces = "warn"
 
 [dependencies]
-bevy = "0.19"
-bevy_enhanced_input = "0.26"
-bevy_asset_loader = "0.27"
-bevy_common_assets = { version = "0.17", features = ["ron"] }
-bevy_editor_cam = { version = "0.10", default-features = false }
-avian3d = "0.7"
+bevy = { version = "0.20", features = ["pan_orbit_camera"] }
+bevy_enhanced_input = "0.27"
+bevy_asset_loader = "0.28"
+bevy_common_assets = { version = "0.18", features = ["ron"] }
+avian3d = "0.8"
 # Loads Jackdaw-authored `.bsn` scenes, answers the editor's schema query and
-# connects Play-in-editor. 0.19 is git-only; keep `rev` matching the installed editor.
-jackdaw_runtime = { git = "https://github.com/ada-x64/jackdaw", branch="main", features = ["physics"] }
+# connects Play-in-editor. Keep the version matching the installed editor.
+jackdaw_runtime = "0.20"
+# Builds avian colliders for authored `AvianCollider`s (0.19's `physics` feature).
+# No `terrain`: we don't enable jackdaw_runtime's terrain either.
+jackdaw_avian_integration = { version = "0.20", default-features = false }
 
 # not bevy
 tiny_bail = "0.7"
@@ -40,7 +42,7 @@ clap = { optional = true, version = "4.5.54", features = ["derive"] }
 q_shell = { optional = true, git = "https://github.com/cubething-qproj/q_shell", version = "^0.1.0" }
 q_proc = { optional = true, git = "https://github.com/cubething-qproj/q_proc", version = "^0.1.0" }
 q_query_lang = { optional = true, git = "https://github.com/cubething-qproj/q_query_lang", version = "^0.1.0" }
-bevy-inspector-egui = { optional = true, version = "0.37.0" }
+bevy-inspector-egui = { optional = true, version = "0.38.0" }
 
 [dev-dependencies]
 q_test_harness = { git = "https://github.com/cubething-qproj/q_test_harness", version = "^0.1" }

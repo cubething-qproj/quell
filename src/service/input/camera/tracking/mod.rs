@@ -1,6 +1,6 @@
 use crate::prelude::*;
 
-mod bundle;
+mod scene;
 mod events;
 
 #[cfg(test)]
@@ -9,7 +9,7 @@ mod collision_tests;
 mod tests;
 
 pub mod prelude {
-    pub use super::bundle::tracking_cam_bundle;
+    pub use super::scene::tracking_cam_scene;
 }
 
 pub fn plugin(app: &mut App) {

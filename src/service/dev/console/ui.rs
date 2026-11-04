@@ -144,7 +144,7 @@ fn absorb_input(
 
 /// Despawns a console and its terminal once the terminal's shell has exited.
 fn close_console(
-    remove: On<Remove, ShellTarget<TerminalIoEndpoint>>,
+    remove: On<Remove<ShellTarget<TerminalIoEndpoint>>>,
     consoles: Query<(Entity, &Console)>,
     active: Option<Res<ActiveShellKeyboardInput>>,
     mut commands: Commands,
