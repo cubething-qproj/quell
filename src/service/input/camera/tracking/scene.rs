@@ -1,6 +1,7 @@
 use crate::prelude::*;
 
-pub fn tracking_cam_bundle(target: Entity) -> impl Scene {
+/// Creates a tracking camera and its input actions for the spring arm's target.
+pub fn tracking_cam_scene(target: Entity) -> impl Scene {
     bsn! {
         template(move |_| Ok(SpringArm::new(target)))
         Camera3d::default()

@@ -64,7 +64,7 @@ fn init(
     commands.trigger(SpawnGlobalCtx);
     commands.trigger(SpawnCursorCapture);
     commands.spawn((flycam_bundle(), ScreenScoped, Name::new("Free Camera")));
-    commands.spawn_scene(tracking_cam_bundle(cube_entity)).insert((
+    commands.spawn_scene(tracking_cam_scene(cube_entity)).insert((
         Camera {
             order: CameraOrder::World as isize,
             is_active: false,
@@ -196,7 +196,7 @@ mod tests {
             let target = world.spawn(Transform::default()).id();
             let free = world.spawn(flycam_bundle()).id();
             let tracking = world
-                .spawn_scene(tracking_cam_bundle(target))
+                .spawn_scene(tracking_cam_scene(target))
                 .expect("tracking camera scene has no dependencies")
                 .insert((
                     Camera {

@@ -59,7 +59,7 @@ pub(super) fn on_add_player_controller(mut world: DeferredWorld, ctx: HookContex
             ]
         });
     commands
-        .spawn_scene(tracking_cam_bundle(ctx.entity))
+        .spawn_scene(tracking_cam_scene(ctx.entity))
         .insert((
             Name::new("PlayerCam"),
             PlayerCameraOf(ctx.entity),

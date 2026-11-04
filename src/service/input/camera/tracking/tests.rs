@@ -33,7 +33,7 @@ impl Fixture {
         let target = app.world_mut().spawn(Transform::from_xyz(1., 2., 3.)).id();
         let camera = app
             .world_mut()
-            .spawn_scene(tracking_cam_bundle(target))
+            .spawn_scene(tracking_cam_scene(target))
             .expect("tracking camera scene has no dependencies")
             .id();
         let window = {
